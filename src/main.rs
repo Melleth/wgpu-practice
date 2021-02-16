@@ -11,6 +11,7 @@ struct State {
     sc_desc: wgpu::SwapChainDescriptor,
     swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
+    clear_color: wgpu::Color,
 }
 
 impl State {
@@ -46,8 +47,9 @@ impl State {
         };
 
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
+        let clear_color = wgpu::Color::BLACK;
 
-        Self { surface, device, queue, sc_desc, swap_chain, size }
+        Self { surface, device, queue, sc_desc, swap_chain, size, clear_color }
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -58,14 +60,25 @@ impl State {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        false
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                self.clear_color = wgpu::Color {
+                    r: position.x / self.size.width as f64,
+                    g: position.y / self.size.height  as f64,
+                    b: 1.0,
+                    a: 1.0,
+                };
+                true
+            }
+            _ => false
+        }
     }
 
     fn update(&mut self) {
         //todo!()
     }
 
-    fn render(&mut self, mouse_pos: (f64, f64)) -> Result<(), wgpu::SwapChainError> {
+    fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
         // Sort of  ogl framebuffer I guess?
         let frame = self.swap_chain
             .get_current_frame()?
@@ -81,9 +94,7 @@ impl State {
                     attachment: &frame.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: mouse_pos.0/self.size.width as f64, g: mouse_pos.1/self.size.height as f64, b: 0.3, a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(self.clear_color),
                         store: true,
                     }
                 }
@@ -106,7 +117,6 @@ fn main() {
     // fn main() cannot be async, so block the main thread until future complete.
     use futures::executor::block_on;
     let mut state = block_on(State::new(&window));
-    let mut mouse_pos: (f64, f64) = (0.0, 0.0);
 
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -129,13 +139,6 @@ fn main() {
                             _ => {}
                         }
                     }
-                    WindowEvent::CursorMoved {
-                        position, ..
-                    } => {
-                        mouse_pos.0 = position.x;
-                        mouse_pos.1 = position.y;
-                    }
-                    _ => {}
                     WindowEvent::Resized(physical_size) => {
                         state.resize(*physical_size);
                     }
@@ -147,7 +150,7 @@ fn main() {
             }
             Event::RedrawRequested(_) => {
                 state.update();
-                match state.render(mouse_pos) {
+                match state.render() {
                     // All good.
                     Ok(_) => {}
                     // Recreate the sc if it is lost.
