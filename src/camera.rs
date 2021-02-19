@@ -123,5 +123,12 @@ impl CameraController {
         if self.is_left_pressed {
             camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
         }
+
+        if self.is_up_pressed {
+            camera.eye += Vector3::unit_y() * self.speed;
+        }
+        if self.is_down_pressed {
+            camera.eye -= Vector3::unit_y() * self.speed;
+        }
     }
 }

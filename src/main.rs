@@ -139,6 +139,7 @@ struct State {
     uniform_bind_group: wgpu::BindGroup,
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
+    depth_texture: texture::Texture,
 }
 
 impl State {
@@ -186,7 +187,7 @@ impl State {
             zfar: 100.0,
         };
 
-        let camera_controller = CameraController::new(1.0);
+        let camera_controller = CameraController::new(0.2);
 
         let diffuse_bytes = include_bytes!("happy-tree.png");
         let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
@@ -272,6 +273,8 @@ impl State {
             label: Some("uniform_bind_group"),
         });
 
+        let depth_texture = texture::Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
+
         let clear_color = wgpu::Color::BLACK;
 
         // Load precompiled shaders (see build.rs), set up render pipeline.
@@ -312,7 +315,12 @@ impl State {
                 },
             ],
             primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            depth_stencil_state: None,
+            depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilStateDescriptor::default(),
+            }),
             vertex_state: wgpu::VertexStateDescriptor {
                 index_format: wgpu::IndexFormat::Uint16,
                 vertex_buffers: &[Vertex::desc(), InstanceRaw::desc()],
@@ -390,13 +398,18 @@ impl State {
             uniform_bind_group,
             instances,
             instance_buffer,
+            depth_texture,
         }
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        // Update the new size to state and the swapchain descriptor.
         self.size = new_size;
         self.sc_desc.width = new_size.width;
         self.sc_desc.height = new_size.height;
+
+        // Recreate textures that are screen space buffers. (depth buffer e.g.)
+        self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
@@ -446,7 +459,14 @@ impl State {
                     }
                 }
             ],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                attachment: &self.depth_texture.view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            }),
         });
 
         // Set the pipeline, draw the geometry.
