@@ -9,45 +9,14 @@ use wgpu::util::DeviceExt;
 use cgmath::prelude::*;
 use cgmath::{Point3, Vector3, Matrix4, Quaternion};
 
+use std::path::Path;
+
 mod texture;
 mod camera;
+mod model;
 
 use camera::{Camera, CameraController};
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2],
-}
-
-impl Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
-        wgpu::VertexBufferDescriptor {
-            stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::InputStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttributeDescriptor { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float3, },
-                wgpu::VertexAttributeDescriptor { offset: std::mem::size_of::<[f32;3]>() as wgpu::BufferAddress, shader_location: 1, format: wgpu::VertexFormat::Float2, }
-            ]
-        }
-    }
-}
-
-const VERTICES: &[Vertex] = &[
-    // Changed
-    Vertex { position: [-0.0868241, 0.49240386, 0.0], tex_coords: [0.4131759, 0.00759614], }, // A
-    Vertex { position: [-0.49513406, 0.06958647, 0.0], tex_coords: [0.0048659444, 0.43041354], }, // B
-    Vertex { position: [-0.21918549, -0.44939706, 0.0], tex_coords: [0.28081453, 0.949397057], }, // C
-    Vertex { position: [0.35966998, -0.3473291, 0.0], tex_coords: [0.85967, 0.84732911], }, // D
-    Vertex { position: [0.44147372, 0.2347359, 0.0], tex_coords: [0.9414737, 0.2652641], }, // E
-];
-
-const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
-];
+use model::{Vertex, DrawModel};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -76,7 +45,7 @@ struct Instance {
 impl Instance {
     fn to_raw(&self) -> InstanceRaw {
         InstanceRaw {
-            model: (Matrix4::from_translation(self.position) * Matrix4::from(self.rotation)).into(),
+            model: (Matrix4::from_translation(self.position) * Matrix4::from(self.rotation) * Matrix4::from_scale(10.0)).into(),
         }
     }
 }
@@ -127,9 +96,9 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
+    //vertex_buffer: wgpu::Buffer,
+    //index_buffer: wgpu::Buffer,
+    //num_indices: u32,
     diffuse_bind_group: wgpu::BindGroup,
     diffuse_texture: texture::Texture,
     camera: Camera,
@@ -140,6 +109,7 @@ struct State {
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
     depth_texture: texture::Texture,
+    gltf_model: model::Model,
 }
 
 impl State {
@@ -300,7 +270,7 @@ impl State {
             }),
             rasterization_state: Some(wgpu::RasterizationStateDescriptor {
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: wgpu::CullMode::Back,
+                cull_mode: wgpu::CullMode::None,
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
@@ -322,8 +292,8 @@ impl State {
                 stencil: wgpu::StencilStateDescriptor::default(),
             }),
             vertex_state: wgpu::VertexStateDescriptor {
-                index_format: wgpu::IndexFormat::Uint16,
-                vertex_buffers: &[Vertex::desc(), InstanceRaw::desc()],
+                index_format: wgpu::IndexFormat::Uint32,
+                vertex_buffers: &[model::ModelVertex::desc(), InstanceRaw::desc()],
             },
             sample_count: 1,
             sample_mask: !0,
@@ -331,24 +301,24 @@ impl State {
         });
 
         // Create vertex buffer and index buffer
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsage::VERTEX,
+        // let vertex_buffer = device.create_buffer_init(
+        //     &wgpu::util::BufferInitDescriptor {
+        //         label: Some("Vertex Buffer"),
+        //         contents: bytemuck::cast_slice(VERTICES),
+        //         usage: wgpu::BufferUsage::VERTEX,
 
-            }
-        );
+        //     }
+        // );
 
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsage::INDEX,
-            }
-        );
+        // let index_buffer = device.create_buffer_init(
+        //     &wgpu::util::BufferInitDescriptor {
+        //         label: Some("Index Buffer"),
+        //         contents: bytemuck::cast_slice(INDICES),
+        //         usage: wgpu::BufferUsage::INDEX,
+        //     }
+        // );
 
-        let num_indices = INDICES.len() as u32;
+        // let num_indices = INDICES.len() as u32;
 
         // Instancing stuff starts here.
         const NUM_INSTANCES_PER_ROW: u32 = 10;
@@ -356,7 +326,7 @@ impl State {
         const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5); 
         let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let position = Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
+                let position = Vector3 { x: x as f32, y: 0.0, z: z as f32} - INSTANCE_DISPLACEMENT;
                 let rotation = if position.is_zero() {
                     Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0))
                 } else {
@@ -377,6 +347,14 @@ impl State {
             }
         );
 
+        let res_dir = Path::new(env!("OUT_DIR")).join("res");
+        let gltf_model = model::Model::load(
+            &device,
+            &queue,
+            &texture_bind_group_layout,
+            res_dir.join("Avocado.gltf"),
+        ).unwrap();
+
         Self { 
             surface,
             device,
@@ -386,9 +364,9 @@ impl State {
             size,
             clear_color,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_indices,
+            //vertex_buffer,
+            //index_buffer,
+            //num_indices,
             diffuse_bind_group,
             diffuse_texture,
             camera,
@@ -399,6 +377,7 @@ impl State {
             instances,
             instance_buffer,
             depth_texture,
+            gltf_model,
         }
     }
 
@@ -430,7 +409,7 @@ impl State {
             }
             _ => false
         }
-}
+    }
 
     fn update(&mut self) {
         self.camera_controller.update_camera(&mut self.camera);
@@ -471,12 +450,25 @@ impl State {
 
         // Set the pipeline, draw the geometry.
         render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-        render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        let mesh = &self.gltf_model.meshes[0];
+        let material = &self.gltf_model.materials[mesh.material];
+
+        // Old default texture from the tutorial (happy-tree.png)
+        //render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+        //render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
+
+        // Set the "model_matrix" atribute:
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..));
-        render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
+
+        // Draw mesh instances.
+        render_pass.draw_mesh_instanced(
+            &self.gltf_model.meshes[0],
+            0..self.instances.len() as u32,
+            material,
+            &self.uniform_bind_group
+        );
+        
+        //render_pass.draw_mesh(&self.gltf_model.meshes[0]);
 
         drop(render_pass);
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -489,6 +481,8 @@ fn main() {
     env_logger::init();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new() .build(&event_loop) .unwrap();
+
+    let res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
 
     // fn main() cannot be async, so block the main thread until future complete.
     use futures::executor::block_on;

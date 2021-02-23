@@ -2,6 +2,9 @@ use anyhow::*;
 use glob::glob;
 use std::fs::{read_to_string, write};
 use std::path::PathBuf;
+use std::env;
+use fs_extra::copy_items;
+use fs_extra::dir::CopyOptions;
 
 struct ShaderData {
     src: String,
@@ -53,21 +56,31 @@ fn main() -> Result<()> {
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
 
-        let mut compiler = shaderc::Compiler::new().context("Unable to create shader compiler.")?;
+    let mut compiler = shaderc::Compiler::new().context("Unable to create shader compiler.")?;
 
-        for shader in shaders {
-            // Rerun on file change.
-            println!("cargo:rerun-if-changed={}", shader.src_path.as_os_str().to_str().unwrap());
+    for shader in shaders {
+        // Rerun on file change.
+        println!("cargo:rerun-if-changed={}", shader.src_path.as_os_str().to_str().unwrap());
 
-            let compiled = compiler.compile_into_spirv(
-                &shader.src,
-                shader.kind,
-                &shader.src_path.to_str().unwrap(),
-                "main",
-                None,
-            )?;
+        let compiled = compiler.compile_into_spirv(
+            &shader.src,
+            shader.kind,
+            &shader.src_path.to_str().unwrap(),
+            "main",
+            None,
+        )?;
 
-            write(shader.spv_path, compiled.as_binary_u8())?;
-        }
-        Ok(())
+        write(shader.spv_path, compiled.as_binary_u8())?;
+    }
+
+    // Copy resources from project folder to build folder for easy access.
+    println!("cargo:rerun-if-changed=src/res/*");
+    let out_dir = env::var("OUT_DIR")?;
+    let mut copy_options = CopyOptions::new();
+    copy_options.overwrite = true;
+    let mut paths_to_copy = Vec::new();
+    paths_to_copy.push("./src/res/");
+    copy_items(&paths_to_copy, out_dir, &copy_options)?;
+        
+    Ok(())
 }
