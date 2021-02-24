@@ -61,7 +61,6 @@ impl Model {
     pub fn load<P: AsRef<Path>>(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        layout: &wgpu::BindGroupLayout,
         path: P
     ) -> Result<Self> {
         let (document, buffers, images) = gltf::import(path.as_ref())?;
@@ -71,31 +70,16 @@ impl Model {
 
         for mesh in document.meshes() {
             for primitive in mesh.primitives() {
+
                 // Deal with material.
-                // This is a major guess as to what image holds albedo pixels. Compile
-                //  to find out I guess :)
-                let diffuse_texture = texture::Texture::from_gltf_image(device, queue, &images[0], Some("diffuse_texture"))?;
-                let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                        },
-                    ],
-                    label: None,
-                });
-
-                materials.push(Material {
-                    name: "diffuse_texture_material".to_string(),
-                    diffuse_texture,
-                    bind_group,
-                });
-
+                materials.push(
+                    Material::from_gltf(
+                        primitive.material(),
+                        &images,
+                        device,
+                        queue
+                    )
+                );
 
                 let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
                 let mut vertices = Vec::new();                
@@ -132,6 +116,7 @@ impl Model {
                         indices.push(index);
                     }
                 }
+                println!("Model is composed of {} triangles", indices.len() / 3);
 
                 // Create buffers.
                 let vertex_buffer = device.create_buffer_init(
@@ -162,12 +147,129 @@ impl Model {
         }
         Ok ( Self { meshes, materials })
     }
+
+    pub fn get_bind_group_layouts<'a>(&'a self) -> Vec<&'a wgpu::BindGroupLayout> {
+        let mut bgls = Vec::new();
+        for m in &self.materials {
+            bgls.push(&m.bind_group_layout);
+        }
+        bgls
+    }
 }
 
 pub struct Material {
     pub name: String,
-    pub diffuse_texture: texture::Texture,
+    pub diffuse_texture: Option<texture::Texture>,
+    pub normal_texture: Option<texture::Texture>,
+    pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
+}
+
+impl Material {
+    fn create_bind_group_for_textures(
+        textures: Vec<&texture::Texture>,
+        device: &wgpu::Device
+    ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
+        // Define texture bindgroup layout, and the bind group.
+        let mut layout_desc_entries = Vec::new();
+        let mut bind_group_entries = Vec::new();
+
+        for (i, t) in textures.iter().enumerate() {
+            layout_desc_entries.push(
+                wgpu::BindGroupLayoutEntry {
+                    binding: (i * 2) as u32,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::SampledTexture {
+                        multisampled: false,
+                        dimension: wgpu::TextureViewDimension::D2,
+                        component_type: wgpu::TextureComponentType::Float,
+                    },
+                    count: None,
+                }
+            );
+            layout_desc_entries.push(
+                wgpu::BindGroupLayoutEntry {
+                    binding: (i * 2 + 1) as u32,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler {
+                        comparison: false,
+                    },
+                    count: None,
+                }
+            );
+
+            bind_group_entries.push(
+                wgpu::BindGroupEntry {
+                    binding: (i * 2) as u32,
+                    resource: wgpu::BindingResource::TextureView(&t.view)
+                }
+            );
+
+            bind_group_entries.push(
+                wgpu::BindGroupEntry {
+                    binding: (i * 2 + 1) as u32,
+                    resource: wgpu::BindingResource::Sampler(&t.sampler)
+                }
+            );
+        }
+
+        let bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &layout_desc_entries.as_slice(),
+                label: Some("bind_group_layout"),
+            }
+        );
+
+        let bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &bind_group_layout,
+                entries: &bind_group_entries,
+                label: Some("bind_group"),
+            }
+        );
+
+        (bind_group_layout, bind_group)
+    }
+
+    pub fn from_gltf(
+        material: gltf::material::Material,
+        images: &Vec<gltf::image::Data>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Self {
+        let mut textures = Vec::new();
+
+        let pbr_mr = material.pbr_metallic_roughness();
+        let diffuse_texture = if let Some(tex) = pbr_mr.base_color_texture() {
+            let img = &images[tex.texture().index()];
+            Some ( texture::Texture::from_gltf_image(
+                device,
+                queue,
+                img,
+                Some("diffuse_texture")
+            ))
+        } else {
+            None
+        };
+
+        let normal_texture = if let Some(tex) = material.normal_texture() {
+            let img = &images[tex.texture().index()];
+            Some ( texture::Texture::from_gltf_image( device, queue, img, Some("normal_texture")) )
+        } else { None };
+
+        if let Some(ref t) = diffuse_texture {
+            textures.push(t);
+        }
+
+        if let Some(ref t) = normal_texture {
+            textures.push(t);
+        }
+        let (bind_group_layout, bind_group) = Material::create_bind_group_for_textures(textures, device);
+
+        let name = material.name().unwrap_or("Very cool material name.").to_string();
+
+        Self { name, diffuse_texture, normal_texture, bind_group_layout, bind_group, }
+    }
 }
 
 pub struct Mesh {

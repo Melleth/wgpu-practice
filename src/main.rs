@@ -10,6 +10,7 @@ use cgmath::prelude::*;
 use cgmath::{Point3, Vector3, Matrix4, Quaternion};
 
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 mod texture;
 mod camera;
@@ -96,11 +97,6 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
-    //vertex_buffer: wgpu::Buffer,
-    //index_buffer: wgpu::Buffer,
-    //num_indices: u32,
-    diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: texture::Texture,
     camera: Camera,
     camera_controller: CameraController,
     uniforms: Uniforms,
@@ -159,50 +155,6 @@ impl State {
 
         let camera_controller = CameraController::new(0.2);
 
-        let diffuse_bytes = include_bytes!("happy-tree.png");
-        let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
-
-        // Define texture bindgroup layour and the bind group.
-        let texture_bind_group_layout = device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::SampledTexture {
-                            multisampled: false,
-                            dimension: wgpu::TextureViewDimension::D2,
-                            component_type: wgpu::TextureComponentType::Uint,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler {
-                            comparison: false,
-                        },
-                        count: None,
-                    },
-                ],
-                label: Some("Texture_bind_group_layout"),
-            }
-        );
-
-        let diffuse_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0, resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                    },
-                    wgpu:: BindGroupEntry {
-                        binding: 1, resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                    },
-                ],
-                label: Some("diffuse_bind_group"),
-            }
-        );
 
         // Uniform definitons start here
         let mut uniforms = Uniforms::new();
@@ -247,13 +199,24 @@ impl State {
 
         let clear_color = wgpu::Color::BLACK;
 
+        // Load Model
+        let res_dir = Path::new(env!("OUT_DIR")).join("res");
+        let gltf_model = model::Model::load(
+            &device,
+            &queue,
+            res_dir.join("Avocado.glb"),
+        ).unwrap();
+
         // Load precompiled shaders (see build.rs), set up render pipeline.
         let vs_module = device.create_shader_module(wgpu::include_spirv!("shader.vert.spv"));
         let fs_module = device.create_shader_module(wgpu::include_spirv!("shader.frag.spv"));
 
+        let mut bind_group_layouts = gltf_model.get_bind_group_layouts();
+        bind_group_layouts.push(&uniform_bind_group_layout);
+
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&texture_bind_group_layout, &uniform_bind_group_layout],
+            bind_group_layouts: bind_group_layouts.as_slice(),
             push_constant_ranges: &[],
         });
 
@@ -270,7 +233,7 @@ impl State {
             }),
             rasterization_state: Some(wgpu::RasterizationStateDescriptor {
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: wgpu::CullMode::None,
+                cull_mode: wgpu::CullMode::Back,
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
@@ -300,28 +263,9 @@ impl State {
             alpha_to_coverage_enabled: false,
         });
 
-        // Create vertex buffer and index buffer
-        // let vertex_buffer = device.create_buffer_init(
-        //     &wgpu::util::BufferInitDescriptor {
-        //         label: Some("Vertex Buffer"),
-        //         contents: bytemuck::cast_slice(VERTICES),
-        //         usage: wgpu::BufferUsage::VERTEX,
-
-        //     }
-        // );
-
-        // let index_buffer = device.create_buffer_init(
-        //     &wgpu::util::BufferInitDescriptor {
-        //         label: Some("Index Buffer"),
-        //         contents: bytemuck::cast_slice(INDICES),
-        //         usage: wgpu::BufferUsage::INDEX,
-        //     }
-        // );
-
-        // let num_indices = INDICES.len() as u32;
 
         // Instancing stuff starts here.
-        const NUM_INSTANCES_PER_ROW: u32 = 10;
+        const NUM_INSTANCES_PER_ROW: u32 = 100;
         const NUM_INSTANCES: u32 = NUM_INSTANCES_PER_ROW * NUM_INSTANCES_PER_ROW;
         const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5); 
         let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
@@ -343,17 +287,10 @@ impl State {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Instance Buffer"),
                 contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsage::VERTEX,
+                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
             }
         );
 
-        let res_dir = Path::new(env!("OUT_DIR")).join("res");
-        let gltf_model = model::Model::load(
-            &device,
-            &queue,
-            &texture_bind_group_layout,
-            res_dir.join("Avocado.gltf"),
-        ).unwrap();
 
         Self { 
             surface,
@@ -364,11 +301,6 @@ impl State {
             size,
             clear_color,
             render_pipeline,
-            //vertex_buffer,
-            //index_buffer,
-            //num_indices,
-            diffuse_bind_group,
-            diffuse_texture,
             camera,
             camera_controller,
             uniforms,
@@ -411,9 +343,17 @@ impl State {
         }
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, duration: Duration) {
         self.camera_controller.update_camera(&mut self.camera);
         self.uniforms.update_view_proj(&self.camera);
+
+        // Rotate the instances each frame.
+        for mut i in self.instances.iter_mut() {
+            i.rotation = Quaternion::from_axis_angle(i.position.clone().normalize(), cgmath::Deg(duration.as_secs_f32() * 100.0));
+        }
+        let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+
+        self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
     }
 
@@ -467,7 +407,7 @@ impl State {
             material,
             &self.uniform_bind_group
         );
-        
+
         //render_pass.draw_mesh(&self.gltf_model.meshes[0]);
 
         drop(render_pass);
@@ -488,7 +428,10 @@ fn main() {
     use futures::executor::block_on;
     let mut state = block_on(State::new(&window));
 
+    let mut instant = Instant::now();
     event_loop.run(move |event, _, control_flow| {
+        let duration = instant.elapsed();
+
         match event {
             Event::WindowEvent {
                 ref event,
@@ -519,7 +462,7 @@ fn main() {
 
             }
             Event::RedrawRequested(_) => {
-                state.update();
+                state.update(duration);
                 match state.render() {
                     // All good.
                     Ok(_) => {}
