@@ -458,7 +458,7 @@ impl State {
         self.camera_controller.update_camera(&mut self.camera);
         self.uniforms.update_view_proj(&self.camera);
 
-        // Rotate the instances each frame.
+        //Rotate the instances each frame.
         // for mut i in self.instances.iter_mut() {
         //     i.rotation = Quaternion::from_axis_angle(i.position.clone().normalize(), cgmath::Deg(duration.as_secs_f32() * 100.0));
         // }

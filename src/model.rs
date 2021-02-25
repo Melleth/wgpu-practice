@@ -187,6 +187,8 @@ pub struct ModelVertex {
     position: [f32; 3],
     tex_coords: [f32; 2],
     normal: [f32; 3],
+    tangent: [f32; 3],
+    bitangent: [f32; 3],
 }
 
 pub struct Model {
@@ -226,13 +228,23 @@ impl Model {
                 vertices = if let Some(pos_iter) = reader.read_positions() {
                     if let Some(tc_iter) = reader.read_tex_coords(0) {
                         if let Some(n_iter) = reader.read_normals() {
-                            pos_iter.zip(tc_iter.into_f32().zip(n_iter)).map(|(p, (tc, n))| {
-                                ModelVertex {
-                                    position: p,
-                                    tex_coords: tc,
-                                    normal: n,
-                                }
-                            }).collect()
+                            if let Some(tangent_iter) = reader.read_tangents() {
+                                pos_iter.zip(
+                                    tc_iter.into_f32().zip(
+                                        n_iter.zip(
+                                            tangent_iter))).map(|(p, (tc, (n, t)))| {
+                                                let tangent = cgmath::Vector3::from([t[0], t[1], t[2]]);
+                                                let normal = cgmath::Vector3::from(n);
+                                                let bitangent = tangent.cross(normal);
+                                                ModelVertex {
+                                                    position: p,
+                                                    tex_coords: tc,
+                                                    normal: n,
+                                                    tangent: tangent.into(),
+                                                    bitangent: bitangent.into(),
+                                                }
+                                            }).collect()
+                            } else { Vec::new() }
                         } else { Vec::new() }
                     } else { Vec::new() }
                 } else { Vec::new() };
@@ -437,6 +449,9 @@ impl Vertex for ModelVertex {
                 wgpu::VertexAttributeDescriptor { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float3, },
                 wgpu::VertexAttributeDescriptor { offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress, shader_location: 1, format: wgpu::VertexFormat::Float2, },
                 wgpu::VertexAttributeDescriptor { offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress, shader_location: 2, format: wgpu::VertexFormat::Float3, },
+                wgpu::VertexAttributeDescriptor { offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress, shader_location: 3, format: wgpu::VertexFormat::Float3, },
+                wgpu::VertexAttributeDescriptor { offset: std::mem::size_of::<[f32; 11]>() as wgpu::BufferAddress, shader_location: 4, format: wgpu::VertexFormat::Float3, },
+
             ]
         }
     }
