@@ -17,11 +17,12 @@ mod camera;
 mod model;
 
 use camera::{Camera, CameraController};
-use model::{Vertex, DrawModel};
+use model::{Vertex, DrawModel, DrawLight};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
+    view_position: [f32; 4],
     view_proj: [[f32; 4]; 4],
 }
 
@@ -29,11 +30,13 @@ impl Uniforms {
     fn new() -> Self {
         use cgmath::SquareMatrix;
         Self {
+            view_position: [0.0; 4],
             view_proj: Matrix4::identity().into(),
         }
     }
 
     fn update_view_proj(&mut self, camera: &Camera) {
+        self.view_position = camera.eye.to_homogeneous().into();
         self.view_proj = camera.build_view_projection_matrix().into();
     }
 }
@@ -88,6 +91,70 @@ impl InstanceRaw {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct Light {
+    position: [f32; 3],
+    _padding: u32,
+    color: [f32; 3],
+}
+
+fn create_render_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    color_format: wgpu::TextureFormat,
+    depth_format: Option<wgpu::TextureFormat>,
+    vertex_descs: &[wgpu::VertexBufferDescriptor],
+    vs_module: &wgpu::ShaderModule,
+    fs_module: &wgpu::ShaderModule,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Render Pipeline"),
+        layout: Some(&layout),
+        vertex_stage: wgpu::ProgrammableStageDescriptor {
+            module: &vs_module,
+            entry_point: "main",
+        },
+        fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+            module: &fs_module,
+            entry_point: "main",
+        }),
+        rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: wgpu::CullMode::Back,
+            depth_bias: 0,
+            depth_bias_slope_scale: 0.0,
+            depth_bias_clamp: 0.0,
+            clamp_depth: false,
+        }),
+        color_states: &[
+            wgpu::ColorStateDescriptor {
+                format: color_format,
+                color_blend: wgpu::BlendDescriptor::REPLACE,
+                alpha_blend: wgpu::BlendDescriptor::REPLACE,
+                write_mask: wgpu::ColorWrite::ALL,
+            },
+        ],
+        primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+        depth_stencil_state: depth_format.map(|format| {
+            wgpu::DepthStencilStateDescriptor {
+                format: format,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilStateDescriptor::default(),
+            }
+        }),
+        vertex_state: wgpu::VertexStateDescriptor {
+            index_format: wgpu::IndexFormat::Uint32,
+            vertex_buffers: &[model::ModelVertex::desc(), InstanceRaw::desc()],
+        },
+        sample_count: 1,
+        sample_mask: !0,
+        alpha_to_coverage_enabled: false,
+    })
+}
+
+
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -97,6 +164,7 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     render_pipeline: wgpu::RenderPipeline,
+    light_render_pipeline: wgpu::RenderPipeline,
     camera: Camera,
     camera_controller: CameraController,
     uniforms: Uniforms,
@@ -106,6 +174,9 @@ struct State {
     instance_buffer: wgpu::Buffer,
     depth_texture: texture::Texture,
     gltf_model: model::Model,
+    light: Light,
+    light_buffer: wgpu::Buffer,
+    light_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -172,7 +243,7 @@ impl State {
                 entries : &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX,
+                        visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::UniformBuffer {
                             dynamic: false,
                             min_binding_size: None,
@@ -205,7 +276,47 @@ impl State {
             &device,
             &queue,
             res_dir.join("Avocado.glb"),
+            //res_dir.join("PIZZA_5K.gltf"),
         ).unwrap();
+
+        // Light stuff starts here.
+        let light = Light {
+            position: [2.0, 2.0, 2.0],
+            _padding: 0,
+            color: [1.0, 1.0, 1.0],
+        };
+
+        let light_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Light vertex buffer"),
+                contents: bytemuck::cast_slice(&[light]),
+                usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::VERTEX,
+            }
+        );
+
+        let light_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::UniformBuffer {
+                        dynamic: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: None,
+            }
+        );
+
+        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &light_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(light_buffer.slice(..)),
+            }],
+            label: None,
+        });
 
         // Load precompiled shaders (see build.rs), set up render pipeline.
         let vs_module = device.create_shader_module(wgpu::include_spirv!("shader.vert.spv"));
@@ -213,6 +324,7 @@ impl State {
 
         let mut bind_group_layouts = gltf_model.get_bind_group_layouts();
         bind_group_layouts.push(&uniform_bind_group_layout);
+        bind_group_layouts.push(&light_bind_group_layout);
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
@@ -220,52 +332,46 @@ impl State {
             push_constant_ranges: &[],
         });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex_stage: wgpu::ProgrammableStageDescriptor {
-                module: &vs_module,
-                entry_point: "main",
-            },
-            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-                module: &fs_module,
-                entry_point: "main",
-            }),
-            rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: wgpu::CullMode::Back,
-                depth_bias: 0,
-                depth_bias_slope_scale: 0.0,
-                depth_bias_clamp: 0.0,
-                clamp_depth: false,
-            }),
-            color_states: &[
-                wgpu::ColorStateDescriptor {
-                    format: sc_desc.format,
-                    color_blend: wgpu::BlendDescriptor::REPLACE,
-                    alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                    write_mask: wgpu::ColorWrite::ALL,
-                },
-            ],
-            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
-                format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilStateDescriptor::default(),
-            }),
-            vertex_state: wgpu::VertexStateDescriptor {
-                index_format: wgpu::IndexFormat::Uint32,
-                vertex_buffers: &[model::ModelVertex::desc(), InstanceRaw::desc()],
-            },
-            sample_count: 1,
-            sample_mask: !0,
-            alpha_to_coverage_enabled: false,
-        });
+        let render_pipeline = create_render_pipeline(
+            &device,
+            &render_pipeline_layout,
+            sc_desc.format,
+            Some(texture::Texture::DEPTH_FORMAT),
+            &[model::ModelVertex::desc()],
+            &vs_module,
+            &fs_module
+        );
+
+        let light_render_pipeline = {
+            let light_render_pipeline_layout = device.create_pipeline_layout(
+                &wgpu::PipelineLayoutDescriptor {
+                    label: Some("Light Pipeline Layout"),
+                    bind_group_layouts: &[
+                        &uniform_bind_group_layout,
+                        &light_bind_group_layout,
+                    ],
+                    push_constant_ranges: &[],
+                }
+            );
+
+            let light_vs_module = device.create_shader_module(wgpu::include_spirv!("light.vert.spv"));
+            let light_fs_module = device.create_shader_module(wgpu::include_spirv!("light.frag.spv"));
+
+            create_render_pipeline(
+                &device, 
+                &light_render_pipeline_layout, 
+                sc_desc.format, 
+                Some(texture::Texture::DEPTH_FORMAT), 
+                &[model::ModelVertex::desc()], 
+                &light_vs_module, 
+                &light_fs_module,
+            )
+        };
+
 
 
         // Instancing stuff starts here.
-        const NUM_INSTANCES_PER_ROW: u32 = 100;
+        const NUM_INSTANCES_PER_ROW: u32 = 50;
         const NUM_INSTANCES: u32 = NUM_INSTANCES_PER_ROW * NUM_INSTANCES_PER_ROW;
         const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5); 
         let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
@@ -292,6 +398,7 @@ impl State {
         );
 
 
+
         Self { 
             surface,
             device,
@@ -301,6 +408,7 @@ impl State {
             size,
             clear_color,
             render_pipeline,
+            light_render_pipeline,
             camera,
             camera_controller,
             uniforms,
@@ -310,6 +418,9 @@ impl State {
             instance_buffer,
             depth_texture,
             gltf_model,
+            light,
+            light_buffer,
+            light_bind_group,
         }
     }
 
@@ -348,11 +459,17 @@ impl State {
         self.uniforms.update_view_proj(&self.camera);
 
         // Rotate the instances each frame.
-        for mut i in self.instances.iter_mut() {
-            i.rotation = Quaternion::from_axis_angle(i.position.clone().normalize(), cgmath::Deg(duration.as_secs_f32() * 100.0));
-        }
+        // for mut i in self.instances.iter_mut() {
+        //     i.rotation = Quaternion::from_axis_angle(i.position.clone().normalize(), cgmath::Deg(duration.as_secs_f32() * 100.0));
+        // }
         let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
 
+
+        // Update the light
+        let old_position: Vector3<_> = self.light.position.into();
+        self.light.position = (Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0)) * old_position).into();
+
+        self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light]));
         self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
     }
@@ -389,24 +506,34 @@ impl State {
         });
 
         // Set the pipeline, draw the geometry.
-        render_pass.set_pipeline(&self.render_pipeline);
-        let mesh = &self.gltf_model.meshes[0];
-        let material = &self.gltf_model.materials[mesh.material];
 
         // Old default texture from the tutorial (happy-tree.png)
         //render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
         //render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
 
         // Set the "model_matrix" atribute:
+
+        // Draw light (as an avocado... :o )
+        render_pass.set_pipeline(&self.light_render_pipeline);
+        render_pass.set_vertex_buffer(1, self.light_buffer.slice(..));
+
+        render_pass.draw_light_model(
+            &self.gltf_model,
+            &self.uniform_bind_group,
+            &self.light_bind_group,
+        );
+
+        render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
         // Draw mesh instances.
-        render_pass.draw_mesh_instanced(
-            &self.gltf_model.meshes[0],
+        render_pass.draw_model_instanced(
+            &self.gltf_model,
             0..self.instances.len() as u32,
-            material,
-            &self.uniform_bind_group
+            &self.uniform_bind_group,
+            &self.light_bind_group
         );
+
 
         //render_pass.draw_mesh(&self.gltf_model.meshes[0]);
 

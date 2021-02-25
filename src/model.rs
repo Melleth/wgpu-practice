@@ -12,21 +12,52 @@ pub trait DrawModel<'a, 'b>
 where
     'b: 'a,
 {
-    fn draw_mesh(&mut self, mesh: &'b Mesh, material: &'b Material, uniforms: &'b wgpu::BindGroup);
+    fn draw_mesh(
+        &mut self,
+        mesh: &'b Mesh,
+        material: &'b Material,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup
+    );
+
     fn draw_mesh_instanced(
         &mut self,
         mesh: &'b Mesh,
         instances: Range<u32>,
         material: &'b Material,
         uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup
     );
+
+    fn draw_model(
+        &mut self,
+        model: &'b Model,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    );
+
+    fn draw_model_instanced(
+        &mut self,
+        model: &'b Model,
+        instances: Range<u32>,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    );
+
+    
 }
 impl<'a, 'b> DrawModel<'a, 'b> for wgpu::RenderPass<'a>
 where
     'b: 'a,
 {
-    fn draw_mesh(&mut self, mesh: &'b Mesh, material: &'b Material, uniforms: &'b wgpu::BindGroup) {
-        self.draw_mesh_instanced(mesh, 0..1, material, uniforms);
+    fn draw_mesh(
+        &mut self,
+        mesh: &'b Mesh,
+        material: &'b Material,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup
+    ) {
+        self.draw_mesh_instanced(mesh, 0..1, material, uniforms, light);
     }
 
     fn draw_mesh_instanced(
@@ -35,12 +66,118 @@ where
         instances: Range<u32>,
         material: &'b Material,
         uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup
     ){
         self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
         self.set_index_buffer(mesh.index_buffer.slice(..));
         self.set_bind_group(0, &material.bind_group, &[]);
         self.set_bind_group(1, &uniforms, &[]);
+        self.set_bind_group(2, &light, &[]);
         self.draw_indexed(0..mesh.num_elements, 0, instances);
+    }
+
+    fn draw_model(
+        &mut self,
+        model: &'b Model,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    ) {
+        self.draw_model_instanced(model, 0..1, uniforms, light);
+    }
+
+    fn draw_model_instanced(
+        &mut self,
+        model: &'b Model,
+        instances: Range<u32>,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    ) {
+        for mesh in &model.meshes {
+            let material = &model.materials[mesh.material];
+            self.draw_mesh_instanced(mesh, instances.clone(), material, uniforms, light);
+        }
+    }
+}
+
+pub trait DrawLight<'a, 'b>
+where
+    'b: 'a,
+{
+    fn draw_light_mesh(
+        &mut self,
+        mesh: &'b Mesh,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    );
+    fn draw_light_mesh_instanced(
+        &mut self,
+        mesh: &'b Mesh,
+        instances: Range<u32>,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    ) where
+        'b: 'a;
+
+    fn draw_light_model(
+        &mut self,
+        model: &'b Model,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    );
+    fn draw_light_model_instanced(
+        &mut self,
+        model: &'b Model,
+        instances: Range<u32>,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    );
+}
+
+impl<'a, 'b> DrawLight<'a, 'b> for wgpu::RenderPass<'a>
+where
+    'b: 'a,
+{
+    fn draw_light_mesh(
+        &mut self,
+        mesh: &'b Mesh,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    ) {
+        self.draw_light_mesh_instanced(mesh, 0..1, uniforms, light);
+    }
+
+    fn draw_light_mesh_instanced(
+        &mut self,
+        mesh: &'b Mesh,
+        instances: Range<u32>,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    ) {
+        self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+        self.set_index_buffer(mesh.index_buffer.slice(..));
+        self.set_bind_group(0, uniforms, &[]);
+        self.set_bind_group(1, light, &[]);
+        self.draw_indexed(0..mesh.num_elements, 0, instances);
+    }
+
+    fn draw_light_model(
+        &mut self,
+        model: &'b Model,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    ) {
+        self.draw_light_model_instanced(model, 0..1, uniforms, light);
+    }
+    fn draw_light_model_instanced(
+        &mut self,
+        model: &'b Model,
+        instances: Range<u32>,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    ) {
+        for mesh in &model.meshes {
+            self.draw_light_mesh_instanced(mesh, instances.clone(), uniforms, light);
+        }
     }
 }
 
@@ -84,30 +221,21 @@ impl Model {
                 let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
                 let mut vertices = Vec::new();                
 
+                
                 // Read positions, put them in a ModelVertex struct.
-                if let Some(iter) = reader.read_positions() {
-                    for (i, vertex_position) in iter.enumerate() {
-                        vertices.push(ModelVertex {                            
-                            position: vertex_position,
-                            tex_coords: [0.0, 0.0],
-                            normal: [0.0, 0.0, 0.0]
-                        });
-                    }
-                }
-
-                // Read tex_coords, put them in the struct as well.
-                if let Some(iter) = reader.read_tex_coords(0) {                
-                    for (i, tex_coords) in iter.into_f32().enumerate() {
-                        vertices[i].tex_coords = tex_coords;
-                    }
-                }                    
-
-                // Read vertex normals, put them in the struct.
-                if let Some(iter) = reader.read_normals() {
-                    for (i, normal) in iter.enumerate() {
-                        vertices[i].normal = normal;
-                    }
-                }
+                vertices = if let Some(pos_iter) = reader.read_positions() {
+                    if let Some(tc_iter) = reader.read_tex_coords(0) {
+                        if let Some(n_iter) = reader.read_normals() {
+                            pos_iter.zip(tc_iter.into_f32().zip(n_iter)).map(|(p, (tc, n))| {
+                                ModelVertex {
+                                    position: p,
+                                    tex_coords: tc,
+                                    normal: n,
+                                }
+                            }).collect()
+                        } else { Vec::new() }
+                    } else { Vec::new() }
+                } else { Vec::new() };
 
                 // Read indices.
                 let mut indices = Vec::new();
@@ -116,7 +244,6 @@ impl Model {
                         indices.push(index);
                     }
                 }
-                println!("Model is composed of {} triangles", indices.len() / 3);
 
                 // Create buffers.
                 let vertex_buffer = device.create_buffer_init(
@@ -140,8 +267,7 @@ impl Model {
                     vertex_buffer,
                     index_buffer,
                     num_elements: indices.len() as u32,
-                    // Hardcode that shit for now.
-                    material: 0
+                    material: materials.len() - 1
                 });
             }
         }
@@ -160,6 +286,8 @@ impl Model {
 pub struct Material {
     pub name: String,
     pub diffuse_texture: Option<texture::Texture>,
+    pub metallic_roughness_texture: Option<texture::Texture>,
+    pub occlusion_texture: Option<texture::Texture>,
     pub normal_texture: Option<texture::Texture>,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
@@ -242,21 +370,27 @@ impl Material {
         let pbr_mr = material.pbr_metallic_roughness();
         let diffuse_texture = if let Some(tex) = pbr_mr.base_color_texture() {
             let img = &images[tex.texture().index()];
-            Some ( texture::Texture::from_gltf_image(
-                device,
-                queue,
-                img,
-                Some("diffuse_texture")
-            ))
+            Some(texture::Texture::from_gltf_image(device, queue, img, Some("diffuse_texture")))
         } else {
             None
         };
 
+        let metallic_roughness_texture = if let Some(tex) = pbr_mr.metallic_roughness_texture() {
+            let img = &images[tex.texture().index()];
+            Some(texture::Texture::from_gltf_image(device, queue, img, Some("metallic_roughness_texture")))
+        } else { None };
+        
         let normal_texture = if let Some(tex) = material.normal_texture() {
             let img = &images[tex.texture().index()];
-            Some ( texture::Texture::from_gltf_image( device, queue, img, Some("normal_texture")) )
+            Some(texture::Texture::from_gltf_image(device, queue, img, Some("normal_texture")))
         } else { None };
 
+        let occlusion_texture = if let Some(tex) = material.occlusion_texture() {
+            let img = &images[tex.texture().index()];
+            Some(texture::Texture::from_gltf_image(device, queue, img, Some("occlusion_texture")))
+        } else { None };
+
+        // Figure out what textures are present which we need to request binds for.
         if let Some(ref t) = diffuse_texture {
             textures.push(t);
         }
@@ -268,7 +402,15 @@ impl Material {
 
         let name = material.name().unwrap_or("Very cool material name.").to_string();
 
-        Self { name, diffuse_texture, normal_texture, bind_group_layout, bind_group, }
+        Self { 
+            name,
+            diffuse_texture,
+            metallic_roughness_texture,
+            occlusion_texture,
+            normal_texture,
+            bind_group_layout,
+            bind_group,
+        }
     }
 }
 
