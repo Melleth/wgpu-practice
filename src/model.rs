@@ -221,11 +221,11 @@ impl Model {
                 );
 
                 let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-                let mut vertices = Vec::new();                
+                let mut _vertices = Vec::new();                
 
                 
                 // Read positions, put them in a ModelVertex struct.
-                vertices = if let Some(pos_iter) = reader.read_positions() {
+                _vertices = if let Some(pos_iter) = reader.read_positions() {
                     if let Some(tc_iter) = reader.read_tex_coords(0) {
                         if let Some(n_iter) = reader.read_normals() {
                             if let Some(tangent_iter) = reader.read_tangents() {
@@ -261,7 +261,7 @@ impl Model {
                 let vertex_buffer = device.create_buffer_init(
                     &wgpu::util::BufferInitDescriptor {
                         label: Some(&format!("{:?} Vertex Buffer", path.as_ref())),
-                        contents: bytemuck::cast_slice(&vertices),
+                        contents: bytemuck::cast_slice(&_vertices),
                         usage: wgpu::BufferUsage::VERTEX,
                     }
                 );
@@ -436,11 +436,11 @@ pub struct Mesh {
 
 impl Vertex for ModelVertex {
     fn desc<'a>() -> wgpu::VertexBufferDescriptor<'a> {
-        let vert_atr_arr = wgpu::vertex_attr_array![
+        let _vert_atr_arr = wgpu::vertex_attr_array![
                 0 => Float3,
                 1 => Float2,
                 2 => Float3
-            ];
+        ];
 
         wgpu::VertexBufferDescriptor {
             stride: std::mem::size_of::<ModelVertex>() as wgpu::BufferAddress,

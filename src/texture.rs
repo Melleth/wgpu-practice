@@ -48,7 +48,7 @@ impl Texture {
         Self { texture, view, sampler, }
     }
 
-    pub fn from_bytes(
+    pub fn _from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         bytes: &[u8],
@@ -61,7 +61,7 @@ impl Texture {
                 panic!["Kapot"];
             }
         };
-        Self::from_image(device, queue, &img, Some(label))
+        Self::_from_image(device, queue, &img, Some(label))
     }
 
     pub fn from_gltf_image(
@@ -78,8 +78,8 @@ impl Texture {
 
         use gltf::image::Format;
 
-        let mut format = wgpu::TextureFormat::Rgba8Unorm;
-        let mut converted_rgba: Vec<u8>;// = vec![0 as u8; (img.width * img.height) as usize * 4];
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let converted_rgba: Vec<u8>;
         match img.format {
             Format::R8G8B8 => {
                 // Wgpu seems to not support rgb without alpha, so add a byte for each set of rgb
@@ -136,13 +136,13 @@ impl Texture {
         Self { texture, view, sampler }
     }
 
-    pub fn from_image(
+    pub fn _from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         img: &image::DynamicImage,
         label: Option<&str>,
     ) -> Result<Self> {
-        let rgba = img.to_rgba();
+        let rgba = img.to_rgba8();
         let dimensions = img.dimensions();
 
         let texture_size = wgpu::Extent3d {
@@ -196,7 +196,7 @@ impl Texture {
         Ok(Self { texture, view, sampler })
     }
 
-    pub fn load<P: AsRef<Path>>(
+    pub fn _load<P: AsRef<Path>>(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         path: P,
@@ -204,6 +204,6 @@ impl Texture {
         let path_copy = path.as_ref().to_path_buf();
         let label = path_copy.to_str();
         let img = image::open(path)?;
-        Self::from_image(device, queue, &img, label)
+        Self::_from_image(device, queue, &img, label)
     }
 }

@@ -7,7 +7,7 @@ use winit::{
 use wgpu::util::DeviceExt;
 
 use cgmath::prelude::*;
-use cgmath::{Point3, Vector3, Matrix4, Quaternion};
+use cgmath::{Vector3, Matrix4, Quaternion};
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -16,7 +16,7 @@ mod texture;
 mod camera;
 mod model;
 
-use camera::{Camera, CameraController};
+use camera::{Camera, CameraController, Projection};
 use model::{Vertex, DrawModel, DrawLight};
 
 #[repr(C)]
@@ -28,16 +28,15 @@ struct Uniforms {
 
 impl Uniforms {
     fn new() -> Self {
-        use cgmath::SquareMatrix;
         Self {
             view_position: [0.0; 4],
             view_proj: Matrix4::identity().into(),
         }
     }
 
-    fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_position = camera.eye.to_homogeneous().into();
-        self.view_proj = camera.build_view_projection_matrix().into();
+    fn  update_view_proj(&mut self, camera: &Camera, projection: &Projection) {
+        self.view_position = camera.position.to_homogeneous().into();
+        self.view_proj = (projection.calculate_matrix() * camera.calculate_matrix()).into();
     }
 }
 
@@ -104,7 +103,7 @@ fn create_render_pipeline(
     layout: &wgpu::PipelineLayout,
     color_format: wgpu::TextureFormat,
     depth_format: Option<wgpu::TextureFormat>,
-    vertex_descs: &[wgpu::VertexBufferDescriptor],
+    _vertex_descs: &[wgpu::VertexBufferDescriptor],
     vs_module: &wgpu::ShaderModule,
     fs_module: &wgpu::ShaderModule,
 ) -> wgpu::RenderPipeline {
@@ -166,6 +165,7 @@ struct State {
     render_pipeline: wgpu::RenderPipeline,
     light_render_pipeline: wgpu::RenderPipeline,
     camera: Camera,
+    projection: Projection,
     camera_controller: CameraController,
     uniforms: Uniforms,
     uniform_buffer: wgpu::Buffer,
@@ -177,6 +177,7 @@ struct State {
     light: Light,
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
+    mouse_pressed: bool,
 }
 
 impl State {
@@ -214,22 +215,15 @@ impl State {
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
         // Define the camera.
-        let camera = Camera {
-            eye: (0.0, 1.0, 2.0).into(),
-            target: (0.0, 0.0, 0.0).into(),
-            up: Vector3::unit_y(),
-            aspect: sc_desc.width as f32 / sc_desc.height as f32,
-            fovy: 45.0,
-            znear: 0.1,
-            zfar: 100.0,
-        };
+        let camera = Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let projection = Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
+        let camera_controller = CameraController::new(4.0, 0.4);
 
-        let camera_controller = CameraController::new(0.2);
 
 
         // Uniform definitons start here
         let mut uniforms = Uniforms::new();
-        uniforms.update_view_proj(&camera);
+        uniforms.update_view_proj(&camera, &projection);
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
@@ -372,7 +366,7 @@ impl State {
 
         // Instancing stuff starts here.
         const NUM_INSTANCES_PER_ROW: u32 = 50;
-        const NUM_INSTANCES: u32 = NUM_INSTANCES_PER_ROW * NUM_INSTANCES_PER_ROW;
+        const _NUM_INSTANCES: u32 = NUM_INSTANCES_PER_ROW * NUM_INSTANCES_PER_ROW;
         const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5); 
         let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
@@ -410,6 +404,7 @@ impl State {
             render_pipeline,
             light_render_pipeline,
             camera,
+            projection,
             camera_controller,
             uniforms,
             uniform_buffer,
@@ -421,6 +416,7 @@ impl State {
             light,
             light_buffer,
             light_bind_group,
+            mouse_pressed: false,
         }
     }
 
@@ -433,30 +429,56 @@ impl State {
         // Recreate textures that are screen space buffers. (depth buffer e.g.)
         self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
+
+        // Update the projection
+        self.projection.resize(new_size.width, new_size.height);
     }
 
+
     fn input(&mut self, event: &WindowEvent) -> bool {
+        // I'd merge this to State::input_mouse_movement because splitting the mouse and keyboard handling
+        //  makes no sense, but unfortunately: https://github.com/rust-windowing/winit/issues/1470
         match event {
-            WindowEvent::CursorMoved { position, .. } => {
-                self.clear_color = wgpu::Color {
-                    r: position.x / self.size.width as f64,
-                    g: position.y / self.size.height  as f64,
-                    b: 1.0,
-                    a: 1.0,
-                };
+            WindowEvent::KeyboardInput {
+                input,
+                ..
+            } => {
+                self.camera_controller.process_keyboard(input.virtual_keycode.unwrap(), input.state)
+            }
+            _ => false,
+        }
+    }
+
+    // See State::input why this is seperate.
+    fn input_mouse_movement(&mut self, event: &DeviceEvent) -> bool{
+        match event {
+            DeviceEvent::MouseMotion {
+                delta
+            } => {
+                if self.mouse_pressed {
+                    self.camera_controller.process_mouse(delta.0, delta.1);
+                }
                 true
             }
-            WindowEvent::KeyboardInput { .. } => {
-                self.camera_controller.process_events(event);
-                false
+            DeviceEvent::MouseWheel { delta, .. } => {
+                self.camera_controller.process_scroll(&delta);
+                true
+            }
+            DeviceEvent::Button {
+                button: 1,
+                state,
+                ..
+            } => {
+                self.mouse_pressed = *state == ElementState::Pressed;
+                true
             }
             _ => false
         }
     }
 
-    fn update(&mut self, duration: Duration) {
-        self.camera_controller.update_camera(&mut self.camera);
-        self.uniforms.update_view_proj(&self.camera);
+    fn update(&mut self, dt: Duration) {
+        self.camera_controller.update_camera(&mut self.camera, dt);
+        self.uniforms.update_view_proj(&self.camera, &self.projection);
 
         //Rotate the instances each frame.
         // for mut i in self.instances.iter_mut() {
@@ -467,7 +489,7 @@ impl State {
 
         // Update the light
         let old_position: Vector3<_> = self.light.position.into();
-        self.light.position = (Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(1.0)) * old_position).into();
+        self.light.position = (Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(60.0 * dt.as_secs_f32())) * old_position).into();
 
         self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light]));
         self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
@@ -505,13 +527,6 @@ impl State {
             }),
         });
 
-        // Set the pipeline, draw the geometry.
-
-        // Old default texture from the tutorial (happy-tree.png)
-        //render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-        //render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
-
-        // Set the "model_matrix" atribute:
 
         // Draw light (as an avocado... :o )
         render_pass.set_pipeline(&self.light_render_pipeline);
@@ -524,6 +539,7 @@ impl State {
         );
 
         render_pass.set_pipeline(&self.render_pipeline);
+        // Set the "model_matrix" atribute:
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
         // Draw mesh instances.
@@ -534,8 +550,6 @@ impl State {
             &self.light_bind_group
         );
 
-
-        //render_pass.draw_mesh(&self.gltf_model.meshes[0]);
 
         drop(render_pass);
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -549,34 +563,28 @@ fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new() .build(&event_loop) .unwrap();
 
-    let res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
+    let _res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
 
     // fn main() cannot be async, so block the main thread until future complete.
     use futures::executor::block_on;
     let mut state = block_on(State::new(&window));
 
-    let mut instant = Instant::now();
+    let mut last_render_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
-        let duration = instant.elapsed();
+        *control_flow = ControlFlow::Poll;
 
         match event {
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == window.id() => if !state.input(event) {
+            Event::DeviceEvent { ref event, .. } => { state.input_mouse_movement(event); }
+            Event::WindowEvent { ref event, window_id } if window_id == window.id() => {
                 match event {
                     WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                    WindowEvent::KeyboardInput {
-                        input, ..
-                    } => {
-                        match input {
-                            KeyboardInput {
-                                state: ElementState::Pressed,
-                                virtual_keycode: Some(VirtualKeyCode::Escape),
-                                ..
-                            } => *control_flow = ControlFlow::Exit,
-                            _ => {}
-                        }
+                    WindowEvent::KeyboardInput { input, .. } => match input {
+                        KeyboardInput {
+                            state: ElementState::Pressed,
+                            virtual_keycode: Some(VirtualKeyCode::Escape),
+                            ..
+                        } => *control_flow = ControlFlow::Exit,
+                        _ => { state.input(event); }
                     }
                     WindowEvent::Resized(physical_size) => {
                         state.resize(*physical_size);
@@ -589,7 +597,10 @@ fn main() {
 
             }
             Event::RedrawRequested(_) => {
-                state.update(duration);
+                let now = std::time::Instant::now();
+                let dt = now - last_render_time;
+                last_render_time = now;
+                state.update(dt);
                 match state.render() {
                     // All good.
                     Ok(_) => {}
