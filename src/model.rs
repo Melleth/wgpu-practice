@@ -1,4 +1,5 @@
-use crate::texture;
+use crate::renderer::texture::Texture;
+
 use anyhow::*;
 use std::path::Path;
 use std::ops::Range;
@@ -297,17 +298,17 @@ impl Model {
 
 pub struct Material {
     pub name: String,
-    pub diffuse_texture: Option<texture::Texture>,
-    pub metallic_roughness_texture: Option<texture::Texture>,
-    pub occlusion_texture: Option<texture::Texture>,
-    pub normal_texture: Option<texture::Texture>,
+    pub diffuse_texture: Option<Texture>,
+    pub metallic_roughness_texture: Option<Texture>,
+    pub occlusion_texture: Option<Texture>,
+    pub normal_texture: Option<Texture>,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
 }
 
 impl Material {
     fn create_bind_group_for_textures(
-        textures: Vec<&texture::Texture>,
+        textures: Vec<&Texture>,
         device: &wgpu::Device
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
         // Define texture bindgroup layout, and the bind group.
@@ -382,24 +383,24 @@ impl Material {
         let pbr_mr = material.pbr_metallic_roughness();
         let diffuse_texture = if let Some(tex) = pbr_mr.base_color_texture() {
             let img = &images[tex.texture().index()];
-            Some(texture::Texture::from_gltf_image(device, queue, img, Some("diffuse_texture")))
+            Some(Texture::from_gltf_image(device, queue, img, Some("diffuse_texture")))
         } else {
             None
         };
 
         let metallic_roughness_texture = if let Some(tex) = pbr_mr.metallic_roughness_texture() {
             let img = &images[tex.texture().index()];
-            Some(texture::Texture::from_gltf_image(device, queue, img, Some("metallic_roughness_texture")))
+            Some(Texture::from_gltf_image(device, queue, img, Some("metallic_roughness_texture")))
         } else { None };
         
         let normal_texture = if let Some(tex) = material.normal_texture() {
             let img = &images[tex.texture().index()];
-            Some(texture::Texture::from_gltf_image(device, queue, img, Some("normal_texture")))
+            Some(Texture::from_gltf_image(device, queue, img, Some("normal_texture")))
         } else { None };
 
         let occlusion_texture = if let Some(tex) = material.occlusion_texture() {
             let img = &images[tex.texture().index()];
-            Some(texture::Texture::from_gltf_image(device, queue, img, Some("occlusion_texture")))
+            Some(Texture::from_gltf_image(device, queue, img, Some("occlusion_texture")))
         } else { None };
 
         // Figure out what textures are present which we need to request binds for.

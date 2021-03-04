@@ -1,5 +1,5 @@
 // Based on https://sotrh.github.io/learn-wgpu/intermediate/tutorial12-camera/#the-camera
-use winit::{event::*, dpi::LogicalPosition};
+use winit::{event::*, dpi::PhysicalPosition, dpi::LogicalPosition};
 use cgmath::*;
 use std::time::Duration;
 use std::f32::consts::FRAC_PI_2;
@@ -110,6 +110,7 @@ impl CameraController {
     }
 
     pub fn process_keyboard(&mut self, key: VirtualKeyCode, state: ElementState) -> bool {
+        dbg!("Hello from keyboard");
         let amount = if state == ElementState::Pressed { 1.0 } else { 0.0 };
         match key {
             VirtualKeyCode::W | VirtualKeyCode::Up => {
