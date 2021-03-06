@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::camera::{Camera, CameraController, Projection};
-use crate::model::{Vertex, DrawModel, DrawLight, Model, ModelVertex};
+use crate::model::{Vertex, ModelVertex};
 
 use instance::{
     Instance,
@@ -67,7 +67,7 @@ pub struct Renderer {
     pub uniforms: Uniforms,
     uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
-    pub instances: Vec<Instance>,
+    //pub instances: Vec<Instance>,
     pub instance_buffer: wgpu::Buffer,
     pub depth_texture: texture::Texture,
     light: Light,
@@ -256,28 +256,28 @@ impl Renderer {
 
 
         // Instancing stuff starts here.
-        const NUM_INSTANCES_PER_ROW: u32 = 50;
-        const _NUM_INSTANCES: u32 = NUM_INSTANCES_PER_ROW * NUM_INSTANCES_PER_ROW;
-        const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5); 
-        let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
-            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let position = Vector3 { x: x as f32, y: 0.0, z: z as f32} - INSTANCE_DISPLACEMENT;
-                let rotation = if position.is_zero() {
-                    Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0))
-                } else {
-                    cgmath::Quaternion::from_axis_angle(position.clone().normalize(), cgmath::Deg(45.0))
-                };
-                Instance {
-                    position, rotation,
-                }
-            })
-        }).collect::<Vec<_>>();
+        //const NUM_INSTANCES_PER_ROW: u32 = 50;
+        //const _NUM_INSTANCES: u32 = NUM_INSTANCES_PER_ROW * NUM_INSTANCES_PER_ROW;
+        //const INSTANCE_DISPLACEMENT: Vector3<f32> = Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5); 
+        //let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
+        //    (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+        //        let position = Vector3 { x: x as f32, y: 0.0, z: z as f32} - INSTANCE_DISPLACEMENT;
+        //        let rotation = if position.is_zero() {
+        //            Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0))
+        //        } else {
+        //            cgmath::Quaternion::from_axis_angle(position.clone().normalize(), cgmath::Deg(45.0))
+        //        };
+        //        Instance {
+        //            position, rotation,
+        //        }
+        //    })
+        //}).collect::<Vec<_>>();
 
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        //let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
         let instance_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&instance_data),
+                contents: &[],
                 usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
             }
         );
@@ -298,7 +298,7 @@ impl Renderer {
             uniforms,
             uniform_buffer,
             uniform_bind_group,
-            instances,
+            //instances,
             instance_buffer,
             depth_texture,
             light,
@@ -328,7 +328,7 @@ impl Renderer {
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
 
         // Update the projection
-        //self.projection.resize(ns.width, ns.height);
+        self.camera.projection.resize(ns.width, ns.height);
     }
 
 

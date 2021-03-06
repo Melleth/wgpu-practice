@@ -62,9 +62,8 @@ impl DrawScene for crate::renderer::Renderer {
         });
 
         render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         for m in &scene.models {
-            render_pass.draw_model_instanced(&m, 0..self.instances.len() as u32, &self.uniform_bind_group, &self.light_bind_group);
+            render_pass.draw_model_instanced(&m, 0..m.instances.len() as u32, &self.uniform_bind_group, &self.light_bind_group);
         }
         drop(render_pass);
         self.queue.submit(std::iter::once(encoder.finish()));

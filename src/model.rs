@@ -1,6 +1,14 @@
 use crate::renderer::{
     texture::Texture,
+    instance::Instance,
+    instance::InstanceRaw,
     Renderer,
+};
+
+use cgmath::{
+    Vector3,
+    Quaternion,
+    Rotation3,
 };
 
 use anyhow::*;
@@ -99,6 +107,7 @@ where
     ) {
         for mesh in &model.meshes {
             let material = &model.materials[mesh.material];
+            self.set_vertex_buffer(1, model.instance_buffer.slice(..));
             self.draw_mesh_instanced(mesh, instances.clone(), material, uniforms, light);
         }
     }
@@ -199,6 +208,9 @@ pub struct ModelVertex {
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
+    // For a singular model this would be the modelmatrix.
+    pub instances: Vec<Instance>,
+    pub instance_buffer: wgpu::Buffer,
 }
 
 impl Model {
@@ -291,7 +303,24 @@ impl Model {
                 });
             }
         }
-        Ok ( Self { meshes, materials })
+
+        // Create an empty instances vec, add a non translated/rotated instance.
+        let mut instances = Vec::new();
+        let position = Vector3::new(0.0, 0.0, 0.0);
+        let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0));
+        instances.push(Instance{position, rotation });
+        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+
+        // Create instance buffer.
+        let instance_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+            }
+        );
+
+        Ok ( Self { meshes, materials, instances, instance_buffer})
     }
 
     //pub fn get_bind_group_layouts<'a>(&'a self) -> Vec<&'a wgpu::BindGroupLayout> {
@@ -461,7 +490,6 @@ impl Material {
             metallic_roughness_texture,
             occlusion_texture,
             normal_texture,
-            //bind_group_layout,
             bind_group,
         }
     }
