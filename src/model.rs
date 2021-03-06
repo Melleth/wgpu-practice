@@ -1,4 +1,7 @@
-use crate::renderer::texture::Texture;
+use crate::renderer::{
+    texture::Texture,
+    Renderer,
+};
 
 use anyhow::*;
 use std::path::Path;
@@ -69,6 +72,7 @@ where
         uniforms: &'b wgpu::BindGroup,
         light: &'b wgpu::BindGroup
     ){
+
         self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
         self.set_index_buffer(mesh.index_buffer.slice(..));
         self.set_bind_group(0, &material.bind_group, &[]);
@@ -199,10 +203,12 @@ pub struct Model {
 
 impl Model {
     pub fn load<P: AsRef<Path>>(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        renderer: &Renderer,
         path: P
     ) -> Result<Self> {
+        let queue = &renderer.queue;
+        let device = &renderer.device;
+
         let (document, buffers, images) = gltf::import(path.as_ref())?;
 
         let mut meshes = Vec::new();
@@ -217,7 +223,8 @@ impl Model {
                         primitive.material(),
                         &images,
                         device,
-                        queue
+                        queue,
+                        &renderer.default_bind_group_layout,
                     )
                 );
 
@@ -287,13 +294,13 @@ impl Model {
         Ok ( Self { meshes, materials })
     }
 
-    pub fn get_bind_group_layouts<'a>(&'a self) -> Vec<&'a wgpu::BindGroupLayout> {
-        let mut bgls = Vec::new();
-        for m in &self.materials {
-            bgls.push(&m.bind_group_layout);
-        }
-        bgls
-    }
+    //pub fn get_bind_group_layouts<'a>(&'a self) -> Vec<&'a wgpu::BindGroupLayout> {
+    //    let mut bgls = Vec::new();
+    //    for m in &self.materials {
+    //        bgls.push(&m.bind_group_layout);
+    //    }
+    //    bgls
+    //}
 }
 
 pub struct Material {
@@ -302,7 +309,7 @@ pub struct Material {
     pub metallic_roughness_texture: Option<Texture>,
     pub occlusion_texture: Option<Texture>,
     pub normal_texture: Option<Texture>,
-    pub bind_group_layout: wgpu::BindGroupLayout,
+    //pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
 }
 
@@ -372,11 +379,43 @@ impl Material {
         (bind_group_layout, bind_group)
     }
 
+    fn create_bind_group_with_layout(
+        textures: Vec<&Texture>,
+        device: &wgpu::Device,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::BindGroup {
+        let mut bind_group_entries = Vec::new();
+        println!("Creating bind group for {} textures.", textures.len());
+        for (i, t) in textures.iter().enumerate() {
+            bind_group_entries.push(
+                wgpu::BindGroupEntry {
+                    binding: (i * 2) as u32,
+                    resource: wgpu::BindingResource::TextureView(&t.view)
+                }
+            );
+
+            bind_group_entries.push(
+                wgpu::BindGroupEntry {
+                    binding: (i * 2 + 1) as u32,
+                    resource: wgpu::BindingResource::Sampler(&t.sampler)
+                }
+            );
+        }
+        device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                layout: &bind_group_layout,
+                entries: &bind_group_entries,
+                label: Some("bind_group"),
+            }
+        )
+    }
+
     pub fn from_gltf(
         material: gltf::material::Material,
         images: &Vec<gltf::image::Data>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let mut textures = Vec::new();
 
@@ -411,7 +450,8 @@ impl Material {
         if let Some(ref t) = normal_texture {
             textures.push(t);
         }
-        let (bind_group_layout, bind_group) = Material::create_bind_group_for_textures(textures, device);
+        //let (bind_group_layout, bind_group) = Material::create_bind_group_for_textures(textures, device);
+        let bind_group = Material::create_bind_group_with_layout(textures, device, bind_group_layout);
 
         let name = material.name().unwrap_or("Very cool material name.").to_string();
 
@@ -421,7 +461,7 @@ impl Material {
             metallic_roughness_texture,
             occlusion_texture,
             normal_texture,
-            bind_group_layout,
+            //bind_group_layout,
             bind_group,
         }
     }

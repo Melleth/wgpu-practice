@@ -11,8 +11,8 @@ layout(set = 0, binding = 0) uniform texture2D t_diffuse;
 layout(set = 0, binding = 1) uniform sampler s_diffuse;
 layout(set = 0, binding = 2) uniform texture2D t_normal;
 layout(set = 0, binding = 3) uniform sampler s_normal;
-layout(set = 0, binding = 4) uniform texture2D t_metallic_roughness;
-layout(set = 0, binding = 5) uniform sampler s_metallic_roughness;
+//layout(set = 0, binding = 4) uniform texture2D t_metallic_roughness;
+//layout(set = 0, binding = 5) uniform sampler s_metallic_roughness;
 
 layout(set = 2, binding = 0) uniform Light {
     vec3 light_position;

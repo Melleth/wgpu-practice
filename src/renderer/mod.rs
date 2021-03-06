@@ -33,7 +33,7 @@ use wgpu::util::DeviceExt;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct Uniforms {
+pub struct Uniforms {
     view_position: [f32; 4],
     view_proj: [[f32; 4]; 4],
 }
@@ -46,36 +46,35 @@ impl Uniforms {
         }
     }
 
-    fn  update_view_proj(&mut self, camera: &Camera, projection: &Projection) {
+    pub fn update_view_proj(&mut self, camera: &Camera) {
         self.view_position = camera.position.to_homogeneous().into();
-        self.view_proj = (projection.calculate_matrix() * camera.calculate_matrix()).into();
+        self.view_proj = (camera.projection.calculate_matrix() * camera.calculate_matrix()).into();
     }
 }
 
 pub struct Renderer {
     surface: wgpu::Surface,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
     sc_desc: wgpu::SwapChainDescriptor,
-    swap_chain: wgpu::SwapChain,
+    pub swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
-    clear_color: wgpu::Color,
-    render_pipeline: wgpu::RenderPipeline,
-    light_render_pipeline: wgpu::RenderPipeline,
-    camera: Camera,
-    projection: Projection,
+    pub clear_color: wgpu::Color,
+    pub render_pipeline: wgpu::RenderPipeline,
+    pub light_render_pipeline: wgpu::RenderPipeline,
     camera_controller: CameraController,
-    uniforms: Uniforms,
+    pub camera: Camera,
+    pub uniforms: Uniforms,
     uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: wgpu::BindGroup,
-    instances: Vec<Instance>,
-    instance_buffer: wgpu::Buffer,
-    depth_texture: texture::Texture,
-    gltf_model: Model,
+    pub uniform_bind_group: wgpu::BindGroup,
+    pub instances: Vec<Instance>,
+    pub instance_buffer: wgpu::Buffer,
+    pub depth_texture: texture::Texture,
     light: Light,
     light_buffer: wgpu::Buffer,
-    light_bind_group: wgpu::BindGroup,
+    pub light_bind_group: wgpu::BindGroup,
     mouse_pressed: bool,
+    pub default_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl Renderer {
@@ -113,15 +112,15 @@ impl Renderer {
         let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
         // Define the camera.
-        let camera = Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
-        let projection = Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
         let camera_controller = CameraController::new(4.0, 0.4);
-
+        let mut camera = Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let projection = Projection::new(sc_desc.width, sc_desc.height, cgmath::Deg(45.0), 0.1, 100.0);
+        camera.projection = projection;
 
 
         // Uniform definitons start here
         let mut uniforms = Uniforms::new();
-        uniforms.update_view_proj(&camera, &projection);
+        //uniforms.update_view_proj(&camera);
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
@@ -162,14 +161,6 @@ impl Renderer {
 
         let clear_color = wgpu::Color::BLACK;
 
-        // Load Model
-        let res_dir = Path::new(env!("OUT_DIR")).join("res");
-        let gltf_model = Model::load(
-            &device,
-            &queue,
-            res_dir.join("Avocado.glb"),
-            //res_dir.join("PIZZA_5K.gltf"),
-        ).unwrap();
 
         // Light stuff starts here.
         let light = Light {
@@ -214,7 +205,9 @@ impl Renderer {
         let vs_module = device.create_shader_module(wgpu::include_spirv!("shader_src/shader.vert.spv"));
         let fs_module = device.create_shader_module(wgpu::include_spirv!("shader_src/shader.frag.spv"));
 
-        let mut bind_group_layouts = gltf_model.get_bind_group_layouts();
+        //let mut bind_group_layouts = gltf_model.get_bind_group_layouts();
+        let default_bind_group_layout = Self::default_bindgroup_layout(&device);
+        let mut bind_group_layouts = vec![&default_bind_group_layout];
         bind_group_layouts.push(&uniform_bind_group_layout);
         bind_group_layouts.push(&light_bind_group_layout);
 
@@ -301,7 +294,6 @@ impl Renderer {
             render_pipeline,
             light_render_pipeline,
             camera,
-            projection,
             camera_controller,
             uniforms,
             uniform_buffer,
@@ -309,11 +301,11 @@ impl Renderer {
             instances,
             instance_buffer,
             depth_texture,
-            gltf_model,
             light,
             light_buffer,
             light_bind_group,
             mouse_pressed: false,
+            default_bind_group_layout,
         }
     }
 
@@ -336,7 +328,7 @@ impl Renderer {
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
 
         // Update the projection
-        self.projection.resize(ns.width, ns.height);
+        //self.projection.resize(ns.width, ns.height);
     }
 
 
@@ -383,13 +375,12 @@ impl Renderer {
 
     pub fn update(&mut self, dt: Duration) {
         self.camera_controller.update_camera(&mut self.camera, dt);
-        self.uniforms.update_view_proj(&self.camera, &self.projection);
-
+        self.uniforms.update_view_proj(&self.camera);
         //Rotate the instances each frame.
         // for mut i in self.instances.iter_mut() {
         //     i.rotation = Quaternion::from_axis_angle(i.position.clone().normalize(), cgmath::Deg(duration.as_secs_f32() * 100.0));
         // }
-        let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        //let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
 
 
         // Update the light
@@ -397,9 +388,10 @@ impl Renderer {
         self.light.position = (Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(60.0 * dt.as_secs_f32())) * old_position).into();
 
         self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light]));
-        self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
+        //self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
     }
+
 
     pub fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
         // Analog of ogl fbo I guess?
@@ -432,28 +424,27 @@ impl Renderer {
             }),
         });
 
-
         // Draw light (as an avocado... :o )
-        render_pass.set_pipeline(&self.light_render_pipeline);
-        render_pass.set_vertex_buffer(1, self.light_buffer.slice(..));
+        // render_pass.set_pipeline(&self.light_render_pipeline);
+        // render_pass.set_vertex_buffer(1, self.light_buffer.slice(..));
 
-        render_pass.draw_light_model(
-            &self.gltf_model,
-            &self.uniform_bind_group,
-            &self.light_bind_group,
-        );
+        // render_pass.draw_light_model(
+        //     &self.gltf_model,
+        //     &self.uniform_bind_group,
+        //     &self.light_bind_group,
+        // );
 
-        render_pass.set_pipeline(&self.render_pipeline);
-        // Set the "model_matrix" atribute:
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        // render_pass.set_pipeline(&self.render_pipeline);
+        // // Set the "model_matrix" atribute:
+        //render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 
-        // Draw mesh instances.
-        render_pass.draw_model_instanced(
-            &self.gltf_model,
-            0..self.instances.len() as u32,
-            &self.uniform_bind_group,
-            &self.light_bind_group
-        );
+        // // Draw mesh instances.
+        // render_pass.draw_model_instanced(
+        //     &self.gltf_model,
+        //     0..self.instances.len() as u32,
+        //     &self.uniform_bind_group,
+        //     &self.light_bind_group
+        // );
 
 
         drop(render_pass);
@@ -516,4 +507,40 @@ impl Renderer {
             alpha_to_coverage_enabled: false,
         })
     }
+
+    pub fn get_size(&self) -> (u32, u32) {
+        (self.sc_desc.width, self.sc_desc.height)
+    }
+
+    // Creates a default layout for 4 texture views and their samplers.
+    fn default_bindgroup_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        let layout_entries = (0..2).step_by(1).map(|i| {
+            vec![
+                wgpu::BindGroupLayoutEntry {
+                    binding: (i * 2) as u32,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::SampledTexture {
+                        multisampled: false,
+                        dimension: wgpu::TextureViewDimension::D2,
+                        component_type: wgpu::TextureComponentType::Float,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: (i * 2 + 1) as u32,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler {
+                        comparison: false,
+                    },
+                    count: None
+                }
+            ]
+        }).collect::<Vec<Vec<_>>>().into_iter().flatten().collect::<Vec<wgpu::BindGroupLayoutEntry>>();
+
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &layout_entries,
+            label: Some("default_bindgroup_lauout")
+        })
+    }
+
 }

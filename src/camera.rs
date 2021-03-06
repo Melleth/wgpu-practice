@@ -17,6 +17,7 @@ pub struct Camera {
     pub position: Point3<f32>,
     yaw: Rad<f32>,
     pitch: Rad<f32>,
+    pub projection: Projection,
 }
 
 impl Camera {
@@ -29,6 +30,7 @@ impl Camera {
             position: position.into(),
             yaw: yaw.into(),
             pitch: pitch.into(),
+            projection: Projection::default(),
         }
     }
 
@@ -44,7 +46,7 @@ impl Camera {
         )
     }
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Projection {
     aspect: f32,
     fovy: Rad<f32>,
@@ -74,6 +76,17 @@ impl Projection {
 
     pub fn calculate_matrix(self) -> Matrix4<f32> {
         OPENGL_TO_WGPU_MATRIX * perspective(self.fovy, self.aspect, self.znear, self.zfar)
+    }
+}
+
+impl Default for Projection {
+    fn default() -> Self {
+        Self {
+            aspect: 4.0 / 3.0,
+            fovy: cgmath::Deg(45.0).into(),
+            znear: 0.1,
+            zfar: 100.0,
+        }
     }
 }
 
@@ -110,7 +123,6 @@ impl CameraController {
     }
 
     pub fn process_keyboard(&mut self, key: VirtualKeyCode, state: ElementState) -> bool {
-        dbg!("Hello from keyboard");
         let amount = if state == ElementState::Pressed { 1.0 } else { 0.0 };
         match key {
             VirtualKeyCode::W | VirtualKeyCode::Up => {

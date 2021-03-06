@@ -1,14 +1,13 @@
 mod renderer;
 mod camera;
 mod model;
+mod scene;
 
 use winit::{
     event::*,
     event_loop::{EventLoop, ControlFlow},
     window::{Window, WindowBuilder}
 };
-
-
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -17,7 +16,19 @@ use renderer::{
     Renderer,
 };
 
+use camera::{
+    Camera,
+    Projection,
+};
 
+use scene::{
+    Scene,
+    DrawScene,
+};
+
+use model::{
+    Model,
+};
 
 fn main() {
     env_logger::init();
@@ -29,6 +40,19 @@ fn main() {
     // fn main() cannot be async, so block the main thread until future complete.
     use futures::executor::block_on;
     let mut renderer = block_on(Renderer::new(&window));
+
+
+
+
+    let mut scene = Scene::empty();
+
+    let res_dir = Path::new(env!("OUT_DIR")).join("res");
+    let model = Model::load(&renderer, res_dir.join("Avocado.glb")).unwrap();
+
+
+    scene.add_model(model);
+
+
 
     let mut last_render_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
@@ -55,14 +79,13 @@ fn main() {
                     }
                     _ => {}
                 }
-
             }
             Event::RedrawRequested(_) => {
                 let now = std::time::Instant::now();
                 let dt = now - last_render_time;
                 last_render_time = now;
                 renderer.update(dt);
-                match renderer.render() {
+                match renderer.draw_scene(&scene) {
                     // All good.
                     Ok(_) => {}
                     // Recreate the sc if it is lost.
