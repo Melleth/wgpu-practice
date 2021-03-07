@@ -68,7 +68,7 @@ pub struct Renderer {
     uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     //pub instances: Vec<Instance>,
-    pub instance_buffer: wgpu::Buffer,
+    //pub instance_buffer: wgpu::Buffer,
     pub depth_texture: texture::Texture,
     light: Light,
     light_buffer: wgpu::Buffer,
@@ -274,13 +274,6 @@ impl Renderer {
         //}).collect::<Vec<_>>();
 
         //let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: &[],
-                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-            }
-        );
 
 
         Self { 
@@ -299,7 +292,7 @@ impl Renderer {
             uniform_buffer,
             uniform_bind_group,
             //instances,
-            instance_buffer,
+            //instance_buffer,
             depth_texture,
             light,
             light_buffer,

@@ -323,13 +323,23 @@ impl Model {
         Ok ( Self { meshes, materials, instances, instance_buffer})
     }
 
-    //pub fn get_bind_group_layouts<'a>(&'a self) -> Vec<&'a wgpu::BindGroupLayout> {
-    //    let mut bgls = Vec::new();
-    //    for m in &self.materials {
-    //        bgls.push(&m.bind_group_layout);
-    //    }
-    //    bgls
-    //}
+    pub fn add_instance(&mut self, device: &wgpu::Device) {
+        let mut new = self.instances[self.instances.len() - 1];
+        new.position.x += 1.0;
+        self.instances.push(new);
+        let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+
+        // Drop the old buffer, create a new one.
+        let instance_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+            }
+        );
+        self.instance_buffer = instance_buffer;
+    }
+
 }
 
 pub struct Material {

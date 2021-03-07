@@ -1,6 +1,7 @@
 use cgmath::prelude::*;
 use cgmath::{Vector3, Quaternion, Matrix4};
 
+#[derive(Clone, Copy)]
 pub struct Instance {
     pub position: Vector3<f32>,
     pub rotation: Quaternion<f32>,
@@ -10,6 +11,15 @@ impl Instance {
     pub fn to_raw(&self) -> InstanceRaw {
         InstanceRaw {
             model: (Matrix4::from_translation(self.position) * Matrix4::from(self.rotation) * Matrix4::from_scale(10.0)).into(),
+        }
+    }
+}
+
+impl Default for Instance {
+    fn default() -> Self {
+        Self{
+            position: Vector3::new(0.0, 0.0, 0.0),
+            rotation: Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0)),
         }
     }
 }

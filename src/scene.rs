@@ -23,6 +23,10 @@ impl Scene {
     pub fn add_light(&mut self, light: Light) {
         self.lights.push(light);
     } 
+
+    pub fn add_instance_of(&mut self, id: usize, device: &wgpu::Device) {
+        self.models[id].add_instance(device);
+    }
 }
 
 pub trait DrawScene {

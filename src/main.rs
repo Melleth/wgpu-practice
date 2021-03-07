@@ -55,6 +55,7 @@ fn main() {
 
 
     let mut last_render_time = Instant::now();
+    let mut spawn_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
@@ -84,6 +85,10 @@ fn main() {
                 let now = std::time::Instant::now();
                 let dt = now - last_render_time;
                 last_render_time = now;
+                if spawn_time.elapsed().as_secs_f32() > 3.0 {
+                    scene.add_instance_of(0, &renderer.device);
+                    spawn_time = Instant::now();
+                }
                 renderer.update(dt);
                 match renderer.draw_scene(&scene) {
                     // All good.
