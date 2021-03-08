@@ -85,7 +85,7 @@ impl Renderer {
         let surface = unsafe { instance.create_surface(window) };
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::Default,
+                power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
             },
         ).await.unwrap();
@@ -94,15 +94,15 @@ impl Renderer {
         //  You can view available features through device.features()
         let (device, queue) = adapter.request_device(
             &wgpu::DeviceDescriptor {
+                label: Some("Device descriptor"),
                 features: wgpu::Features::empty(),
                 limits: wgpu::Limits::default(),
-                shader_validation: true,
             },
             None,
         ).await.unwrap();
 
         let sc_desc = wgpu::SwapChainDescriptor {
-            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+            usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
             width: size.width,
             height: size.height,
@@ -135,8 +135,9 @@ impl Renderer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::UniformBuffer {
-                            dynamic: false,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
                             min_binding_size: None,
                         },
                         count: None,
@@ -151,7 +152,7 @@ impl Renderer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer(uniform_buffer.slice(..))
+                    resource: uniform_buffer.as_entire_binding(),
                 }
             ],
             label: Some("uniform_bind_group"),
@@ -182,8 +183,9 @@ impl Renderer {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::UniformBuffer {
-                        dynamic: false,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
                         min_binding_size: None,
                     },
                     count: None,
@@ -196,14 +198,14 @@ impl Renderer {
             layout: &light_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer(light_buffer.slice(..)),
+                resource: light_buffer.as_entire_binding(),
             }],
             label: None,
         });
 
         // Load precompiled shaders (see build.rs), set up render pipeline.
-        let vs_module = device.create_shader_module(wgpu::include_spirv!("shader_src/shader.vert.spv"));
-        let fs_module = device.create_shader_module(wgpu::include_spirv!("shader_src/shader.frag.spv"));
+        let vs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/shader.vert.spv"));
+        let fs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/shader.frag.spv"));
 
         //let mut bind_group_layouts = gltf_model.get_bind_group_layouts();
         let default_bind_group_layout = Self::default_bindgroup_layout(&device);
@@ -239,8 +241,8 @@ impl Renderer {
                 }
             );
 
-            let light_vs_module = device.create_shader_module(wgpu::include_spirv!("shader_src/light.vert.spv"));
-            let light_fs_module = device.create_shader_module(wgpu::include_spirv!("shader_src/light.frag.spv"));
+            let light_vs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/light.vert.spv"));
+            let light_fs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/light.frag.spv"));
 
             Self::create_render_pipeline(
                 &device, 
@@ -397,6 +399,7 @@ impl Renderer {
             label: Some("Render Encoder"),
         });
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Default Renderpass"),
             color_attachments: &[
                 wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &frame.view,
@@ -451,53 +454,52 @@ impl Renderer {
         layout: &wgpu::PipelineLayout,
         color_format: wgpu::TextureFormat,
         depth_format: Option<wgpu::TextureFormat>,
-        _vertex_descs: &[wgpu::VertexBufferDescriptor],
+        vertex_descs: &[wgpu::VertexBufferLayout],
         vs_module: &wgpu::ShaderModule,
         fs_module: &wgpu::ShaderModule,
     ) -> wgpu::RenderPipeline {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&layout),
-            vertex_stage: wgpu::ProgrammableStageDescriptor {
+            vertex: wgpu::VertexState {
                 module: &vs_module,
                 entry_point: "main",
+                buffers: &[ModelVertex::desc(), InstanceRaw::desc()]
             },
-            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+            fragment: Some(wgpu::FragmentState {
                 module: &fs_module,
                 entry_point: "main",
+                targets: &[
+                    wgpu::ColorTargetState {
+                        format: color_format,
+                        color_blend: wgpu::BlendState::REPLACE,
+                        alpha_blend: wgpu::BlendState::REPLACE,
+                        write_mask: wgpu::ColorWrite::ALL,
+                    },
+                ],
             }),
-            rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: wgpu::CullMode::Back,
-                depth_bias: 0,
-                depth_bias_slope_scale: 0.0,
-                depth_bias_clamp: 0.0,
-                clamp_depth: false,
-            }),
-            color_states: &[
-                wgpu::ColorStateDescriptor {
-                    format: color_format,
-                    color_blend: wgpu::BlendDescriptor::REPLACE,
-                    alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                    write_mask: wgpu::ColorWrite::ALL,
-                },
-            ],
-            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-            depth_stencil_state: depth_format.map(|format| {
-                wgpu::DepthStencilStateDescriptor {
+                strip_index_format: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+            },
+            depth_stencil: depth_format.map(|format| {
+                wgpu::DepthStencilState {
                     format: format,
                     depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilStateDescriptor::default(),
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                    clamp_depth: false,
                 }
             }),
-            vertex_state: wgpu::VertexStateDescriptor {
-                index_format: wgpu::IndexFormat::Uint32,
-                vertex_buffers: &[ModelVertex::desc(), InstanceRaw::desc()],
-            },
-            sample_count: 1,
-            sample_mask: !0,
-            alpha_to_coverage_enabled: false,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            }
         })
     }
 
@@ -512,10 +514,10 @@ impl Renderer {
                 wgpu::BindGroupLayoutEntry {
                     binding: (i * 2) as u32,
                     visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::SampledTexture {
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float{ filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
-                        dimension: wgpu::TextureViewDimension::D2,
-                        component_type: wgpu::TextureComponentType::Float,
                     },
                     count: None,
                 },
@@ -524,6 +526,7 @@ impl Renderer {
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Sampler {
                         comparison: false,
+                        filtering: true,
                     },
                     count: None
                 }

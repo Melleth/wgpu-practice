@@ -45,6 +45,7 @@ impl DrawScene for crate::renderer::Renderer {
             label: Some("Render Encoder"),
         });
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Scene render pass"),
             color_attachments: &[
                 wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &frame.view,
