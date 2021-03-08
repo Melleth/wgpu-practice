@@ -6,19 +6,14 @@ mod scene;
 use winit::{
     event::*,
     event_loop::{EventLoop, ControlFlow},
-    window::{Window, WindowBuilder}
+    window::{WindowBuilder}
 };
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 
 use renderer::{
     Renderer,
-};
-
-use camera::{
-    Camera,
-    Projection,
 };
 
 use scene::{
@@ -41,18 +36,11 @@ fn main() {
     use futures::executor::block_on;
     let mut renderer = block_on(Renderer::new(&window));
 
-
-
-
+    // Create scene, add a model to it.
     let mut scene = Scene::empty();
-
     let res_dir = Path::new(env!("OUT_DIR")).join("res");
     let model = Model::load(&renderer, res_dir.join("Avocado.glb")).unwrap();
-
-
     scene.add_model(model);
-
-
 
     let mut last_render_time = Instant::now();
     let mut spawn_time = Instant::now();
@@ -60,6 +48,7 @@ fn main() {
         *control_flow = ControlFlow::Poll;
 
         match event {
+            // TODO: Probably shouldn't do any input processing in renderer but move it to a seperate mod?
             Event::DeviceEvent { ref event, .. } => { renderer.input_mouse_movement(event); }
             Event::WindowEvent { ref event, window_id } if window_id == window.id() => {
                 match event {
@@ -70,6 +59,7 @@ fn main() {
                             virtual_keycode: Some(VirtualKeyCode::Escape),
                             ..
                         } => *control_flow = ControlFlow::Exit,
+                        // TODO: Probably shouldn't do any input processing in renderer but move it to a seperate mod?
                         _ => { renderer.input(event); }
                     }
                     WindowEvent::Resized(physical_size) => {
@@ -85,10 +75,16 @@ fn main() {
                 let now = std::time::Instant::now();
                 let dt = now - last_render_time;
                 last_render_time = now;
+
+                // Timer to test adding instances at runtime.
                 if spawn_time.elapsed().as_secs_f32() > 3.0 {
+                    // TODO: Figure out how to decouple renderer.device from scene::add_instance_of.
+                    //  Brainstorm: I'll need to implement a fn that syncs everything that has changed
+                    //  in the scene to the GPU. scene
                     scene.add_instance_of(0, &renderer.device);
                     spawn_time = Instant::now();
                 }
+
                 renderer.update(dt);
                 match renderer.draw_scene(&scene) {
                     // All good.

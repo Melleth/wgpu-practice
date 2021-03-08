@@ -1,5 +1,5 @@
 // Based on https://sotrh.github.io/learn-wgpu/intermediate/tutorial12-camera/#the-camera
-use winit::{event::*, dpi::PhysicalPosition, dpi::LogicalPosition};
+use winit::{event::*, dpi::LogicalPosition};
 use cgmath::*;
 use std::time::Duration;
 use std::f32::consts::FRAC_PI_2;

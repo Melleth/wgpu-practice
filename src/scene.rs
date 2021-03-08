@@ -1,5 +1,4 @@
 use crate::model::*;
-use crate::camera::*;
 use crate::renderer::light::*;
 
 pub struct Scene {

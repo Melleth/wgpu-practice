@@ -1,7 +1,6 @@
 use crate::renderer::{
     texture::Texture,
     instance::Instance,
-    instance::InstanceRaw,
     Renderer,
 };
 
@@ -17,7 +16,7 @@ use std::ops::Range;
 use wgpu::util::DeviceExt;
 
 pub trait Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a>;
+    fn layout<'a>() -> wgpu::VertexBufferLayout<'a>;
 }
 
 pub trait DrawModel<'a, 'b>
@@ -353,7 +352,7 @@ pub struct Material {
 }
 
 impl Material {
-    fn create_bind_group_for_textures(
+    fn _create_bind_group_for_textures(
         textures: Vec<&Texture>,
         device: &wgpu::Device
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
@@ -515,7 +514,7 @@ pub struct Mesh {
 }
 
 impl Vertex for ModelVertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+    fn layout<'a>() -> wgpu::VertexBufferLayout<'a> {
         let _vert_atr_arr = wgpu::vertex_attr_array![
                 0 => Float3,
                 1 => Float2,

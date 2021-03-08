@@ -2,14 +2,12 @@ pub mod instance;
 pub mod texture;
 pub mod light;
 
-use std::path::Path;
 use std::time::Duration;
 
 use crate::camera::{Camera, CameraController, Projection};
 use crate::model::{Vertex, ModelVertex};
 
 use instance::{
-    Instance,
     InstanceRaw,
 };
 
@@ -25,8 +23,7 @@ use cgmath::{Vector3, Matrix4, Quaternion};
 
 use winit::{
     event::*,
-    event_loop::{EventLoop, ControlFlow},
-    window::{Window, WindowBuilder}
+    window::{Window},
 };
 
 use wgpu::util::DeviceExt;
@@ -67,8 +64,6 @@ pub struct Renderer {
     pub uniforms: Uniforms,
     uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
-    //pub instances: Vec<Instance>,
-    //pub instance_buffer: wgpu::Buffer,
     pub depth_texture: texture::Texture,
     light: Light,
     light_buffer: wgpu::Buffer,
@@ -119,8 +114,7 @@ impl Renderer {
 
 
         // Uniform definitons start here
-        let mut uniforms = Uniforms::new();
-        //uniforms.update_view_proj(&camera);
+        let uniforms = Uniforms::new();
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),
@@ -164,6 +158,8 @@ impl Renderer {
 
 
         // Light stuff starts here.
+        // TODO: move light stuff to scene, add support for multiple lights and figure out
+        //  How to set up a deffered pipeline. <-- will take some research.
         let light = Light {
             position: [2.0, 2.0, 2.0],
             _padding: 0,
@@ -207,7 +203,7 @@ impl Renderer {
         let vs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/shader.vert.spv"));
         let fs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/shader.frag.spv"));
 
-        //let mut bind_group_layouts = gltf_model.get_bind_group_layouts();
+        // Get the pre-defined bindgroup layouts. Not sure if pre-defining is the way, but so far so good.
         let default_bind_group_layout = Self::default_bindgroup_layout(&device);
         let mut bind_group_layouts = vec![&default_bind_group_layout];
         bind_group_layouts.push(&uniform_bind_group_layout);
@@ -224,7 +220,6 @@ impl Renderer {
             &render_pipeline_layout,
             sc_desc.format,
             Some(texture::Texture::DEPTH_FORMAT),
-            &[ModelVertex::desc()],
             &vs_module,
             &fs_module
         );
@@ -249,7 +244,6 @@ impl Renderer {
                 &light_render_pipeline_layout, 
                 sc_desc.format, 
                 Some(Texture::DEPTH_FORMAT), 
-                &[ModelVertex::desc()], 
                 &light_vs_module, 
                 &light_fs_module,
             )
@@ -293,8 +287,6 @@ impl Renderer {
             uniforms,
             uniform_buffer,
             uniform_bind_group,
-            //instances,
-            //instance_buffer,
             depth_texture,
             light,
             light_buffer,
@@ -341,8 +333,8 @@ impl Renderer {
         }
     }
 
-    // See State::input why this is seperate.
     pub fn input_mouse_movement(&mut self, event: &DeviceEvent) -> bool{
+        // See State::input why this is seperate.
         match event {
             DeviceEvent::MouseMotion {
                 delta
@@ -383,12 +375,15 @@ impl Renderer {
         self.light.position = (Quaternion::from_axis_angle((0.0, 1.0, 0.0).into(), cgmath::Deg(60.0 * dt.as_secs_f32())) * old_position).into();
 
         self.queue.write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light]));
-        //self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[self.uniforms]));
     }
 
 
-    pub fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
+    // For now this isn't really used as all the handles to the resources are owned by scene.
+    //  Maybe come up with something to keep scene an abstract representation of the scene
+    //  without any handles to gpu buffers etc? How?... Want to prevent introducing
+    //  refference lifetime bloat.
+    pub fn _render(&mut self) -> Result<(), wgpu::SwapChainError> {
         // Analog of ogl fbo I guess?
         let frame = self.swap_chain
             .get_current_frame()?
@@ -398,7 +393,7 @@ impl Renderer {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Default Renderpass"),
             color_attachments: &[
                 wgpu::RenderPassColorAttachmentDescriptor {
@@ -443,7 +438,7 @@ impl Renderer {
         // );
 
 
-        drop(render_pass);
+        drop(_render_pass);
         self.queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
@@ -454,7 +449,6 @@ impl Renderer {
         layout: &wgpu::PipelineLayout,
         color_format: wgpu::TextureFormat,
         depth_format: Option<wgpu::TextureFormat>,
-        vertex_descs: &[wgpu::VertexBufferLayout],
         vs_module: &wgpu::ShaderModule,
         fs_module: &wgpu::ShaderModule,
     ) -> wgpu::RenderPipeline {
@@ -464,7 +458,7 @@ impl Renderer {
             vertex: wgpu::VertexState {
                 module: &vs_module,
                 entry_point: "main",
-                buffers: &[ModelVertex::desc(), InstanceRaw::desc()]
+                buffers: &[ModelVertex::layout(), InstanceRaw::layout()]
             },
             fragment: Some(wgpu::FragmentState {
                 module: &fs_module,
@@ -503,7 +497,7 @@ impl Renderer {
         })
     }
 
-    pub fn get_size(&self) -> (u32, u32) {
+    pub fn _get_size(&self) -> (u32, u32) {
         (self.sc_desc.width, self.sc_desc.height)
     }
 
