@@ -2,7 +2,7 @@ use crate::model::*;
 use crate::renderer::light::*;
 
 pub struct Scene {
-    models: Vec<Model>,
+    pub models: Vec<Model>,
     _lights: Vec<Light>,
 }
 
@@ -30,6 +30,11 @@ impl Scene {
         //  Needs rework of resource ownership, I think...
         self.models[id].instance_resource.sync_gpu();
     }
+
+    pub fn remove_instance_of(&mut self, id: usize) {
+        // No need to sync, because we can just call draw_indexed with a smaller range?
+        self.models[id].remove_instance();
+    }
 }
 
 pub trait DrawScene {
@@ -47,6 +52,7 @@ impl DrawScene for crate::renderer::Renderer {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Scene render pass"),
             color_attachments: &[
@@ -71,8 +77,9 @@ impl DrawScene for crate::renderer::Renderer {
 
         render_pass.set_pipeline(&self.render_pipeline);
         for m in &scene.models {
-            render_pass.draw_model_instanced(&m, 0..m.instance_resource.get_cpu_length() as u32, &self.uniform_bind_group, &self.light_bind_group);
+            render_pass.draw_model_instanced(&m, 0..m.get_num_instances() as u32, &self.uniform_bind_group, &self.light_bind_group);
         }
+
         drop(render_pass);
         self.queue.submit(std::iter::once(encoder.finish()));
 

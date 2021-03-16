@@ -94,6 +94,10 @@ impl<T: Pod + Zeroable> Resource<T> {
         self.cpu_buffer.extend(&items);
     }
 
+    pub fn remove_from_buffer(&mut self, id: usize) {
+        self.cpu_buffer.remove(id);
+    }
+
     pub fn sync_gpu(&mut self) {
         if self.size < self.cpu_buffer.len() {
             // Recreate the gpu_buffer with twice the size to prevent overflow.

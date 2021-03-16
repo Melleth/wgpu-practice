@@ -44,6 +44,7 @@ fn main() {
 
     let mut last_render_time = Instant::now();
     let mut spawn_time = Instant::now();
+    let mut removing = false;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
@@ -76,10 +77,17 @@ fn main() {
                 let dt = now - last_render_time;
                 last_render_time = now;
 
-                // Timer to test adding instances at runtime.
-                if spawn_time.elapsed().as_secs_f32() > 3.0 {
-                    scene.add_instance_of(0);
+                // Testing adding and removing instances at runtime.
+                if spawn_time.elapsed().as_secs_f32() > 0.01 {
                     spawn_time = Instant::now();
+                    if !removing {
+                        scene.add_instance_of(0);
+                    } else {
+                        scene.remove_instance_of(0);
+                    }
+                    if scene.models[0].get_num_instances() == 100 { removing = true; }
+                    if scene.models[0].get_num_instances() == 1 { removing = false; }
+
                 }
 
                 renderer.update(dt);

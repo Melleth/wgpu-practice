@@ -334,7 +334,12 @@ impl Model {
         self.instance_resource.add_to_buffer(vec![new.to_raw()]);
     }
 
-    pub fn _get_num_instances(&self) -> usize {
+    pub fn remove_instance(&mut self) {
+        // Remove the last instance for testing purposes.
+        self.instance_resource.remove_from_buffer(self.instance_resource.get_cpu_length() - 1);
+    }
+
+    pub fn get_num_instances(&self) -> usize {
         self.instance_resource.get_cpu_length()
     }
 
