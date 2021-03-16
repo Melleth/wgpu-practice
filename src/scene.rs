@@ -3,14 +3,14 @@ use crate::renderer::light::*;
 
 pub struct Scene {
     models: Vec<Model>,
-    lights: Vec<Light>,
+    _lights: Vec<Light>,
 }
 
 impl Scene {
     pub fn empty() -> Self {
         Self {
             models: vec![],
-            lights: vec![],
+            _lights: vec![],
         }
     }
 
@@ -19,12 +19,16 @@ impl Scene {
     } 
 
 
-    pub fn add_light(&mut self, light: Light) {
-        self.lights.push(light);
+    pub fn _add_light(&mut self, light: Light) {
+        self._lights.push(light);
     } 
 
-    pub fn add_instance_of(&mut self, id: usize, device: &wgpu::Device) {
-        self.models[id].add_instance(device);
+    pub fn add_instance_of(&mut self, id: usize) {
+        self.models[id].add_instance();
+
+        // TODO: come up with some Scene::sync fn that'll sync all resources that need to be sync'ed.
+        //  Needs rework of resource ownership, I think...
+        self.models[id].instance_resource.sync_gpu();
     }
 }
 
@@ -67,7 +71,7 @@ impl DrawScene for crate::renderer::Renderer {
 
         render_pass.set_pipeline(&self.render_pipeline);
         for m in &scene.models {
-            render_pass.draw_model_instanced(&m, 0..m.instances.len() as u32, &self.uniform_bind_group, &self.light_bind_group);
+            render_pass.draw_model_instanced(&m, 0..m.instance_resource.get_cpu_length() as u32, &self.uniform_bind_group, &self.light_bind_group);
         }
         drop(render_pass);
         self.queue.submit(std::iter::once(encoder.finish()));

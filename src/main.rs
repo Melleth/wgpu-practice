@@ -39,7 +39,7 @@ fn main() {
     // Create scene, add a model to it.
     let mut scene = Scene::empty();
     let res_dir = Path::new(env!("OUT_DIR")).join("res");
-    let model = Model::load(&renderer, res_dir.join("Avocado.glb")).unwrap();
+    let model = Model::load(&renderer, res_dir.join("avocado").join("Avocado.glb")).unwrap();
     scene.add_model(model);
 
     let mut last_render_time = Instant::now();
@@ -78,10 +78,7 @@ fn main() {
 
                 // Timer to test adding instances at runtime.
                 if spawn_time.elapsed().as_secs_f32() > 3.0 {
-                    // TODO: Figure out how to decouple renderer.device from scene::add_instance_of.
-                    //  Brainstorm: I'll need to implement a fn that syncs everything that has changed
-                    //  in the scene to the GPU. scene
-                    scene.add_instance_of(0, &renderer.device);
+                    scene.add_instance_of(0);
                     spawn_time = Instant::now();
                 }
 

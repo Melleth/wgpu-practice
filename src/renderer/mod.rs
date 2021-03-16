@@ -1,11 +1,18 @@
+pub mod resource;
 pub mod instance;
 pub mod texture;
 pub mod light;
 
 use std::time::Duration;
+use std::sync::Arc;
 
 use crate::camera::{Camera, CameraController, Projection};
 use crate::model::{Vertex, ModelVertex};
+
+use resource::{
+    Resource,
+    ResourceType,
+};
 
 use instance::{
     InstanceRaw,
@@ -51,8 +58,8 @@ impl Uniforms {
 
 pub struct Renderer {
     surface: wgpu::Surface,
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
     sc_desc: wgpu::SwapChainDescriptor,
     pub swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
@@ -96,6 +103,9 @@ impl Renderer {
             None,
         ).await.unwrap();
 
+        let device = Arc::new(device);
+        let queue = Arc::new(queue);
+
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::RENDER_ATTACHMENT,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -115,6 +125,13 @@ impl Renderer {
 
         // Uniform definitons start here
         let uniforms = Uniforms::new();
+        let _uniform_resource = Resource::new_with_data(
+            Arc::clone(&device),
+            Arc::clone(&queue),
+            vec![uniforms],
+            ResourceType::Uniform,
+        );
+
         let uniform_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Uniform Buffer"),

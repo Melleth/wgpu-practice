@@ -1,7 +1,8 @@
 use crate::renderer::{
     texture::Texture,
-    instance::Instance,
+    instance::{Instance, InstanceRaw},
     Renderer,
+    resource::{Resource, ResourceType},
 };
 
 use cgmath::{
@@ -105,7 +106,7 @@ where
     ) {
         for mesh in &model.meshes {
             let material = &model.materials[mesh.material];
-            self.set_vertex_buffer(1, model.instance_buffer.slice(..));
+            self.set_vertex_buffer(1, model.instance_resource.get_gpu_buffer().slice(..));
             self.draw_mesh_instanced(mesh, instances.clone(), material, uniforms, light);
         }
     }
@@ -206,9 +207,9 @@ pub struct ModelVertex {
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
-    // For a singular model this would be the modelmatrix.
-    pub instances: Vec<Instance>,
-    pub instance_buffer: wgpu::Buffer,
+    // For a singular model this would be resource.cpu_buffer.len() == 1 
+    //  vector containing just a model matrix
+    pub instance_resource: Resource<InstanceRaw>,
 }
 
 impl Model {
@@ -302,41 +303,39 @@ impl Model {
             }
         }
 
-        // Create an empty instances vec, add a non translated/rotated instance.
         let mut instances = Vec::new();
         let position = Vector3::new(0.0, 0.0, 0.0);
         let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0));
-        instances.push(Instance{position, rotation });
+        instances.push(Instance{position, rotation, scale: 10.0});
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
 
-        // Create instance buffer.
-        let instance_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-            }
+        // Create instance resource.
+        let instance_resource = Resource::new_with_data(
+            device.clone(), queue.clone(),
+            instance_data,
+            ResourceType::Vertex
         );
 
-        Ok ( Self { meshes, materials, instances, instance_buffer})
+        Ok ( Self { meshes, materials, instance_resource})
     }
 
-    pub fn add_instance(&mut self, device: &wgpu::Device) {
-        let mut new = self.instances[self.instances.len() - 1];
-        new.position.x += 1.0;
-        self.instances.push(new);
-        let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+    pub fn add_instance(&mut self) {
+        // For now we'll default the new instances to be positioned next to the
+        //  previous instance.
+        let prev = self.instance_resource.get_cpu_length() - 1;
+        let mut new = if let Some(prev_raw_instance) = self.instance_resource.local_at(prev) {
+            Instance::from(prev_raw_instance)
+        } else {
+            Instance::default()
+        };
 
-        // Drop the old buffer, create a new one.
-        self.instance_buffer.destroy();
-        let instance_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-            }
-        );
-        self.instance_buffer = instance_buffer;
+        new.position.x += 1.0;
+
+        self.instance_resource.add_to_buffer(vec![new.to_raw()]);
+    }
+
+    pub fn _get_num_instances(&self) -> usize {
+        self.instance_resource.get_cpu_length()
     }
 
 }
@@ -347,7 +346,6 @@ pub struct Material {
     pub metallic_roughness_texture: Option<Texture>,
     pub occlusion_texture: Option<Texture>,
     pub normal_texture: Option<Texture>,
-    //pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
 }
 
@@ -424,7 +422,6 @@ impl Material {
         bind_group_layout: &wgpu::BindGroupLayout,
     ) -> wgpu::BindGroup {
         let mut bind_group_entries = Vec::new();
-        println!("Creating bind group for {} textures.", textures.len());
         for (i, t) in textures.iter().enumerate() {
             bind_group_entries.push(
                 wgpu::BindGroupEntry {
@@ -530,7 +527,6 @@ impl Vertex for ModelVertex {
                 wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress, shader_location: 2, format: wgpu::VertexFormat::Float3, },
                 wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress, shader_location: 3, format: wgpu::VertexFormat::Float3, },
                 wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 11]>() as wgpu::BufferAddress, shader_location: 4, format: wgpu::VertexFormat::Float3, },
-
             ]
         }
     }

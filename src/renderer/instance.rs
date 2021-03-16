@@ -1,17 +1,32 @@
 use cgmath::prelude::*;
-use cgmath::{Vector3, Quaternion, Matrix4};
+use cgmath::{Vector3, Quaternion, Matrix3, Matrix4};
 
 #[derive(Clone, Copy)]
 pub struct Instance {
     pub position: Vector3<f32>,
     pub rotation: Quaternion<f32>,
+    pub scale: f32,
 }
 
 impl Instance {
     pub fn to_raw(&self) -> InstanceRaw {
         InstanceRaw {
-            model: (Matrix4::from_translation(self.position) * Matrix4::from(self.rotation) * Matrix4::from_scale(10.0)).into(),
+            model: (Matrix4::from_translation(self.position) * Matrix4::from(self.rotation) * Matrix4::from_scale(self.scale)).into(),
         }
+    }
+}
+
+impl From<InstanceRaw> for Instance {
+    fn from(raw: InstanceRaw) -> Self {
+        let m: Matrix4<f32> = raw.model.into();
+        // Rotation scale 3x3 submatrix, transpose to row major.
+        let rs = Matrix3::from_cols(m.x.truncate(), m.y.truncate(), m.z.truncate()).transpose();
+        // Assume uniform xyz scaling
+        let scale = rs.x.dot(rs.x).sqrt();
+        // Pull rotation, but don't forget to transpose rs back to column major.
+        let rotation: Quaternion<f32> = ((1.0 / scale) * rs.transpose()).into();
+        let position = m.w.truncate();
+        Instance { position, rotation, scale }
     }
 }
 
@@ -20,6 +35,7 @@ impl Default for Instance {
         Self{
             position: Vector3::new(0.0, 0.0, 0.0),
             rotation: Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0)),
+            scale: 1.0,
         }
     }
 }
