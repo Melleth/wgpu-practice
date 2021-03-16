@@ -1,6 +1,13 @@
 use crate::model::*;
 use crate::renderer::light::*;
 
+// TODO: Adding a scene graph would be really nice.
+//  - Scene graph nodes should be seperate from the models...
+//      - But contain a ref to a model?
+//      - That way I can just adjust the scene graph each frame and
+//        collect all changed nodes and use the refs to figure out what needs to
+//        be synced?
+//          - Maybe an enum NodeChange would help? 
 pub struct Scene {
     pub models: Vec<Model>,
     _lights: Vec<Light>,

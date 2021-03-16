@@ -20,6 +20,11 @@ pub trait Vertex {
     fn layout<'a>() -> wgpu::VertexBufferLayout<'a>;
 }
 
+// Each time I look at these traits I hate them some more.
+//  TODO: remove? just pass the draw functions some renderpass?
+//   - Should get rid of all the lifetime annotations.
+//   - Maybe ruins the potential of parallel draw invocations?
+//      - Is that even a thing/worthwhile?
 pub trait DrawModel<'a, 'b>
 where
     'b: 'a,
@@ -507,6 +512,11 @@ impl Material {
     }
 }
 
+// TODO: Do I want to use the renderer::Resource abstraction for mesh buffer?
+//  - Seems unnessecary as mesh vertices, indices dont really change...
+//  - Would ruin the draw code.
+//  - Yeah probably a bad idea.
+//  - It might be worthwhile to employ resources for animation skinning though... If I get around to it.
 pub struct Mesh {
     pub name: String,
     pub vertex_buffer: wgpu::Buffer,
