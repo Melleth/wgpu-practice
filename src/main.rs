@@ -90,6 +90,7 @@ fn main() {
 
                 }
 
+                scene.update(dt);
                 renderer.update(dt);
                 match renderer.draw_scene(&scene) {
                     // All good.

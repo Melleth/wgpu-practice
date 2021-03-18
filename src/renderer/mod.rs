@@ -432,6 +432,7 @@ impl Renderer {
             }),
         });
 
+
         // Draw light (as an avocado... :o )
         // render_pass.set_pipeline(&self.light_render_pipeline);
         // render_pass.set_vertex_buffer(1, self.light_buffer.slice(..));
