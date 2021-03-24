@@ -337,7 +337,7 @@ impl Renderer {
 
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
-        // I'd merge this to State::input_mouse_movement because splitting the mouse and keyboard handling
+        // I'd merge this to Renderer::input_mouse_movement because splitting the mouse and keyboard handling
         //  makes no sense, but unfortunately: https://github.com/rust-windowing/winit/issues/1470
         match event {
             WindowEvent::KeyboardInput {
@@ -380,12 +380,6 @@ impl Renderer {
     pub fn update(&mut self, dt: Duration) {
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.uniforms.update_view_proj(&self.camera);
-        //Rotate the instances each frame.
-        // for mut i in self.instances.iter_mut() {
-        //     i.rotation = Quaternion::from_axis_angle(i.position.clone().normalize(), cgmath::Deg(duration.as_secs_f32() * 100.0));
-        // }
-        //let instance_data = self.instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-
 
         // Update the light
         let old_position: Vector3<_> = self.light.position.into();

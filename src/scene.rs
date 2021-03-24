@@ -93,12 +93,15 @@ impl SceneNode {
         let mut result = vec![];
 
         // Construct world-v parameters.
+        // TODO: this back and forth from Mat4, Instances, RawInstances
+        //  servers no real purpose and needs to be fixed.
         let mat = Matrix4::from(Instance {
             position: self.position,
             rotation: self.rotation,
             scale: self.scale,
         }.to_raw().model);
 
+        // TODO: see previous.
         let parent_mat = Matrix4::from(parent_instance.to_raw().model);
         let accumulated_mat = parent_mat * mat;
         let accumulated_instance = Instance::from(InstanceRaw { model: accumulated_mat.into() });
@@ -219,12 +222,15 @@ impl Scene {
         //     dbg!(i);
         // }
 
+
+        // Collect instance sync jobs
         for (mid, iid, instance) in changed {
-            if let Some(model_id) = mid {
-                if let Some(instance_id) = iid {
-                    self.models[model_id].change_instance(instance_id, instance);
-                    self.sync_queue.push(SyncJob::Instance { model_id, instance_id });
-                }
+            // A change only needs to be synced if there are resources
+            //  associated with it. Otherwise it's just a local graph change which
+            //  has now propagated through the tree.
+            if let (Some(model_id), Some(instance_id)) = (mid, iid) {
+                self.models[model_id].change_instance(instance_id, instance);
+                self.sync_queue.push(SyncJob::Instance { model_id, instance_id });
             }
         }
     }
