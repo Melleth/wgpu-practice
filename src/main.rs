@@ -25,6 +25,12 @@ use model::{
     Model,
 };
 
+// use cgmath:: {
+//     Quaternion,
+//     Vector3,
+//     Rotation3,
+// };
+
 fn main() {
     env_logger::init();
     let event_loop = EventLoop::new();
@@ -40,7 +46,10 @@ fn main() {
     let mut scene = Scene::empty();
     let res_dir = Path::new(env!("OUT_DIR")).join("res");
     let model = Model::load(&renderer, res_dir.join("avocado").join("Avocado.glb")).unwrap();
+
     scene.add_model(model);
+    scene.add_instance_of(0);
+
 
     let mut last_render_time = Instant::now();
     let mut spawn_time = Instant::now();
@@ -78,17 +87,18 @@ fn main() {
                 last_render_time = now;
 
                 // Testing adding and removing instances at runtime.
-                if spawn_time.elapsed().as_secs_f32() > 0.01 {
-                    spawn_time = Instant::now();
-                    if !removing {
-                        scene.add_instance_of(0);
-                    } else {
-                        scene.remove_instance_of(0);
-                    }
-                    if scene.models[0].get_num_instances() == 100 { removing = true; }
-                    if scene.models[0].get_num_instances() == 1 { removing = false; }
+                //if spawn_time.elapsed().as_secs_f32() > 0.01 {
+                //    spawn_time = Instant::now();
+                //    if !removing {
+                //        scene.add_instance_of(0);
+                //    } else {
+                //        scene.remove_instance_of(0);
+                //    }
+                //    if scene.models[0].get_num_instances() == 100 { removing = true; }
+                //    if scene.models[0].get_num_instances() == 1 { removing = false; }
 
-                }
+                //}
+                //scene.set_rotation_of_node(cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_x(), cgmath::Deg(1.0)));
 
                 scene.update(dt);
                 renderer.update(dt);
@@ -110,5 +120,4 @@ fn main() {
             _ => {}
         }
     });
-
 }

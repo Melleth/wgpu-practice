@@ -25,6 +25,7 @@ impl From<ResourceType> for wgpu::BufferUsage {
 // Abstraction that wraps GPU buffers.
 // Also holds Arc to the device and queue so we can conveniently
 //  perform operations on the resources on the GPU.
+//  Prefarably this should be used for content that changes often only I think.
 pub struct Resource<T: Pod + Zeroable> {
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
@@ -94,14 +95,16 @@ impl<T: Pod + Zeroable> Resource<T> {
         self.cpu_buffer.extend(&items);
     }
 
-    pub fn remove_from_buffer(&mut self, id: usize) {
+    pub fn _remove_from_buffer(&mut self, id: usize) {
         self.cpu_buffer.remove(id);
     }
 
     pub fn sync_gpu(&mut self) {
         if self.size < self.cpu_buffer.len() {
-            // Recreate the gpu_buffer with twice the size to prevent overflow.
-            self.size *= 2;
+            dbg!("adjusting buffer size");
+            // Recreate the gpu_buffer with five time the size to prevent overflow.
+            //  TODO: Needs to be something better... because crash if we add >5 things on the first frame...
+            self.size *= 5;
             self.gpu_buffer.destroy();
             let usage = wgpu::BufferUsage::from(self.resource_type) | wgpu::BufferUsage::COPY_DST;
 
@@ -121,10 +124,13 @@ impl<T: Pod + Zeroable> Resource<T> {
         &self.gpu_buffer
     }
 
+    // I'd say there is a good to fair chance that there would be situations where we want to
+    //  sync an interval of instances, but not all.
     pub fn _partial_sync_gpu(&mut self, range: Range<usize>, offset: usize) {
         self.queue.write_buffer(&self.gpu_buffer, offset as wgpu::BufferAddress, bytemuck::cast_slice(&self.cpu_buffer[range]));
     }
 
+    // Allows for inplace mutation of an instantion within the local resource.
     pub fn _mut_local_at(&mut self, id: usize) -> Option<&mut T> {
         if id < self.cpu_buffer.len() { Some(&mut self.cpu_buffer[id]) } else { None }
     }

@@ -1,7 +1,7 @@
 use cgmath::prelude::*;
 use cgmath::{Vector3, Quaternion, Matrix3, Matrix4};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Instance {
     pub position: Vector3<f32>,
     pub rotation: Quaternion<f32>,
@@ -43,7 +43,7 @@ impl Default for Instance {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceRaw {
-    model: [[f32; 4]; 4],
+    pub model: [[f32; 4]; 4],
 }
 
 impl InstanceRaw {

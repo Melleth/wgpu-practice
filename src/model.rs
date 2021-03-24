@@ -311,7 +311,7 @@ impl Model {
         let mut instances = Vec::new();
         let position = Vector3::new(0.0, 0.0, 0.0);
         let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0));
-        instances.push(Instance{position, rotation, scale: 10.0});
+        instances.push(Instance{position, rotation, scale: 1.0});
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
 
         // Create instance resource.
@@ -339,9 +339,15 @@ impl Model {
         self.instance_resource.add_to_buffer(vec![new.to_raw()]);
     }
 
-    pub fn remove_instance(&mut self) {
+    pub fn change_instance(&mut self, id: usize, instance: Instance) {
+        if let Some(i) = self.instance_resource._mut_local_at(id) {
+            *i = instance.to_raw();
+        }
+    }
+
+    pub fn _remove_instance(&mut self) {
         // Remove the last instance for testing purposes.
-        self.instance_resource.remove_from_buffer(self.instance_resource.get_cpu_length() - 1);
+        self.instance_resource._remove_from_buffer(self.instance_resource.get_cpu_length() - 1);
     }
 
     pub fn get_num_instances(&self) -> usize {

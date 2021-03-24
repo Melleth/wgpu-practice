@@ -1,31 +1,44 @@
 use crate::model::*;
 use crate::renderer::light::*;
+use crate::renderer::{
+    instance::Instance,
+    instance::InstanceRaw,
+};
 
 use std::time::Duration;
 use std::ops::Range;
 
 use cgmath::{
     Vector3,
+    Matrix4,
     Quaternion,
     Rotation3,
 };
 
 // Theorizing different types of syncs I'll need.
+#[derive(Debug)]
+#[allow(dead_code)]
 enum SyncJob {
     Instance {model_id: usize, instance_id: usize},
+    // When we adjust multiple instances at once (e.g. grpah parent changes position)
+    //  we can try to update the resource with one call.
     Instances { model_id: usize, instance_ids: Range<usize> },
     Vertex,
     Index,
     Animation
 }
 
-
+// Consider all these fields LOCAL ONLY!!!
+//  The "world matrix" aka Instance will be calculated when something
+//    changes and needs to be synced to gpu
 struct SceneNode {
-    position: Vector3<f32>,
-    rotation: Quaternion<f32>,
-    model_id: Option<usize>,
-    instance_id: Option<usize>,
-    children: Vec<SceneNode>
+    pub position: Vector3<f32>,
+    pub rotation: Quaternion<f32>,
+    pub scale: f32,
+    pub model_id: Option<usize>,
+    pub instance_id: Option<usize>,
+    pub children: Vec<SceneNode>,
+    pub changed: bool,
 }
 
 impl SceneNode {
@@ -34,14 +47,93 @@ impl SceneNode {
         Self {
             position: Vector3::new(0.0, 0.0, 0.0),
             rotation: Quaternion::from_axis_angle(Vector3::unit_x(), cgmath::Deg(0.0)),
+            scale: 1.0,
             model_id: None,
             instance_id: None,
             children: vec![],
+            changed: false,
+        }
+    }
+
+    pub fn new_instance_node(model_id: usize, instance_id: usize) -> Self {
+        SceneNode {
+            position: Vector3::new(0.0, 0.0, 0.0),
+            rotation: Quaternion::from_axis_angle(Vector3::unit_x(), cgmath::Deg(0.0)),
+            scale: 10.0,
+            model_id: Some(model_id),
+            instance_id: Some(instance_id),
+            children: vec![],
+            changed: true,
         }
     }
 
     pub fn add_child(&mut self, child: SceneNode) {
         self.children.push(child);
+    }
+
+    // For now sets the changed flag, because propagating the values is
+    //  handled by SceneNode::collect_changed(). This is probably obsolete but
+    //  current design of fetching sync jobs relies on this flag.
+    //  TODO: come up with a nicer way that doesn't traverse the tree on each change
+    //      --> possible sync job can be inferred by changed status of parent.
+    pub fn update_children(
+        &mut self,
+        //_parent_pos: Vector3<f32>,
+        //_parent_rot: Quaternion<f32>,
+        //_parent_scale: f32,
+    ) {
+        for child in &mut self.children {
+            child.changed = true;
+            child.update_children();
+        }
+    }
+
+    // Collects all changed node model and instance ids and their new world views as instances.
+    pub fn collect_changed(&mut self, parent_instance: Instance) -> Vec<(Option<usize>, Option<usize>, Instance)> {
+        let mut result = vec![];
+
+        // Construct world-v parameters.
+        let mat = Matrix4::from(Instance {
+            position: self.position,
+            rotation: self.rotation,
+            scale: self.scale,
+        }.to_raw().model);
+
+        let parent_mat = Matrix4::from(parent_instance.to_raw().model);
+        let accumulated_mat = parent_mat * mat;
+        let accumulated_instance = Instance::from(InstanceRaw { model: accumulated_mat.into() });
+
+        if self.changed {
+            result.push((self.model_id, self.instance_id, accumulated_instance));
+            // Don't forget to unset this flag :))
+            self.changed = false;
+        }
+
+        for n in &mut self.children {
+            result.append(&mut n.collect_changed(accumulated_instance));
+        }
+
+        result
+    }
+
+    pub fn translate<T: Into<f32>>(&mut self, x: T, y: T, z: T) {
+        self.position.x += x.into();
+        self.position.y += y.into();
+        self.position.z += z.into();
+        self.changed = true;
+        self.update_children();
+    }
+
+    pub fn _set_scale<T: Into<f32>>(&mut self, scale: T) {
+        self.scale = scale.into();
+        self.changed = true;
+        self.update_children()
+    }
+
+    pub fn rotate(&mut self, rotation: Quaternion<f32>) {
+        self.rotation = self.rotation * rotation;// self.rotation;
+        self.changed = true;
+        self.update_children();
     }
 }
 
@@ -56,7 +148,7 @@ pub struct Scene {
     pub models: Vec<Model>,
     _lights: Vec<Light>,
     sync_queue: Vec<SyncJob>,
-    graph: Option<SceneNode>,
+    graph: SceneNode,
 }
 
 impl Scene {
@@ -65,7 +157,7 @@ impl Scene {
             models: vec![],
             _lights: vec![],
             sync_queue: vec![],
-            graph: None,
+            graph: SceneNode::new_root(),
         }
     }
 
@@ -74,17 +166,16 @@ impl Scene {
 
         if self.models.len() == 1 {
             // If this model is the first to be added, it becomes a child of the scene root
-            let mut scene_root = SceneNode::new_root();
             let model_node = SceneNode {
                 position: Vector3::new(0.0, 0.0, 0.0),
                 rotation: Quaternion::from_axis_angle(Vector3::unit_x(), cgmath::Deg(0.0)),
+                scale: 10.0,
                 model_id: Some(0),
-                instance_id: None,
+                instance_id: Some(0),
                 children: vec![],
+                changed: true,
             };
-
-            scene_root.add_child(model_node);
-            self.graph = Some(scene_root);
+            self.graph.add_child(model_node);
         }
     } 
 
@@ -93,23 +184,54 @@ impl Scene {
         self._lights.push(light);
     } 
 
+    // Creates a new instance of a previously loaded model and adds it to the
+    //  scene graph root node children.
     pub fn add_instance_of(&mut self, model_id: usize) {
         self.models[model_id].add_instance();
         let instance_id = self.models[model_id].get_num_instances() - 1;
 
-        // TODO: come up with some Scene::sync fn that'll sync all resources that need to be sync'ed.
-        //  Needs rework of resource ownership, I think...
-        //self.models[id].instance_resource.sync_gpu();
+        let mut scene_node = SceneNode::new_instance_node(model_id, instance_id);
+
+        // Offset the node a bit so we ccan actually see them
+        scene_node.position.x = instance_id as f32 * 1.0;
+        
+        self.graph.add_child(scene_node);
+
         self.sync_queue.push(SyncJob::Instance { model_id, instance_id });
     }
 
-    pub fn remove_instance_of(&mut self, id: usize) {
+    pub fn _remove_instance_of(&mut self, id: usize) {
         // No need to sync, because we can just call draw_indexed with a smaller range?
-        self.models[id].remove_instance();
+        self.models[id]._remove_instance();
+    }
+
+    // Stub of collecting sync jobs.
+    fn collect_sync_jobs(&mut self) {
+        // Construct root instance, so we can propagate changes down the scene graph/tree
+        let root_instance = Instance {
+            position: self.graph.position,
+            rotation: self.graph.rotation,
+            scale: self.graph.scale,
+        };
+
+        let changed =  self.graph.collect_changed(root_instance);
+        // for i in &changed {
+        //     dbg!(i);
+        // }
+
+        for (mid, iid, instance) in changed {
+            if let Some(model_id) = mid {
+                if let Some(instance_id) = iid {
+                    self.models[model_id].change_instance(instance_id, instance);
+                    self.sync_queue.push(SyncJob::Instance { model_id, instance_id });
+                }
+            }
+        }
     }
 
     // Stub of what the sync fn could look like.
     // TODO: shouldn't sync whole instance resource on a singular change. WIP
+    //  - Also syncs the resource multile times on changes of seperate instances of the resource.
     fn sync_scene_gpu(&mut self) {
         for job in &self.sync_queue {
             match job {
@@ -126,7 +248,19 @@ impl Scene {
     // fn unpdate stub that would also handle animations, scenegraph updates etc.
     //  For now it just calls sync
     pub fn update(&mut self, _dt: Duration) {
+        //self.graph.scale += 0.1;
+        self.graph.rotate(Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(1.0)));
+        self.graph.translate(0.0, 0.0001, 0.0);
+        self.graph.update_children();
+        self.graph.changed = true;
+        self.collect_sync_jobs();
         self.sync_scene_gpu();
+    }
+
+    // Rotates root node and its childeren
+    pub fn _set_rotation_of_node(&mut self, rotation: Quaternion<f32>) {
+        self.graph.rotate(rotation);
+        self.graph.update_children();
     }
 }
 
