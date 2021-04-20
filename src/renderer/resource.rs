@@ -40,7 +40,7 @@ pub struct Resource<T: Pod + Zeroable> {
 
 impl<T: Pod + Zeroable> Resource<T> {
     // Constructs a new Resource with a size
-    pub fn _new_sized(
+    pub fn new_sized(
         device: Arc<wgpu::Device>,
         queue: Arc<wgpu::Queue>,
         size: usize,

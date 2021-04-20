@@ -25,12 +25,6 @@ use model::{
     Model,
 };
 
-// use cgmath:: {
-//     Quaternion,
-//     Vector3,
-//     Rotation3,
-// };
-
 fn main() {
     env_logger::init();
     let event_loop = EventLoop::new();
@@ -47,13 +41,13 @@ fn main() {
     let res_dir = Path::new(env!("OUT_DIR")).join("res");
     let model = Model::load(&renderer, res_dir.join("avocado").join("Avocado.glb")).unwrap();
 
+    // Simple test scene to test scenegraph.
     scene.add_model(model);
-    scene.add_instance_of(0);
-
-
+    scene.make_galaxy();
+    
     let mut last_render_time = Instant::now();
-    let mut spawn_time = Instant::now();
-    let mut removing = false;
+    let mut _spawn_time = Instant::now();
+    let mut _removing = false;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
@@ -98,8 +92,8 @@ fn main() {
                 //    if scene.models[0].get_num_instances() == 1 { removing = false; }
 
                 //}
-                //scene.set_rotation_of_node(cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_x(), cgmath::Deg(1.0)));
 
+                scene.animate_galaxy(dt);
                 scene.update(dt);
                 renderer.update(dt);
                 match renderer.draw_scene(&scene) {

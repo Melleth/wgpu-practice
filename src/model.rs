@@ -5,12 +5,6 @@ use crate::renderer::{
     resource::{Resource, ResourceType},
 };
 
-use cgmath::{
-    Vector3,
-    Quaternion,
-    Rotation3,
-};
-
 use anyhow::*;
 use std::path::Path;
 use std::ops::Range;
@@ -308,18 +302,27 @@ impl Model {
             }
         }
 
-        let mut instances = Vec::new();
-        let position = Vector3::new(0.0, 0.0, 0.0);
-        let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0));
-        instances.push(Instance{position, rotation, scale: 1.0});
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-
+        // This is old code. If we want to render without a scene graph, we might need it again.
+        // let mut instances: = Vec::new();
+        // let position = Vector3::new(0.0, 0.0, 0.0);
+        // let rotation = Quaternion::from_axis_angle(Vector3::unit_z(), cgmath::Deg(0.0));
+        // instances.push(Instance{position, rotation, scale: 1.0});
+        // let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        //
         // Create instance resource.
-        let instance_resource = Resource::new_with_data(
-            device.clone(), queue.clone(),
-            instance_data,
+        // let instance_resource = Resource::new_with_data(
+        //     device.clone(), queue.clone(),
+        //     instance_data,
+        //     ResourceType::Vertex
+        // );
+
+        let instance_resource = Resource::new_sized(
+            device.clone(),
+            queue.clone(), 
+            1,
             ResourceType::Vertex
         );
+            
 
         Ok ( Self { meshes, materials, instance_resource})
     }
@@ -339,9 +342,15 @@ impl Model {
         self.instance_resource.add_to_buffer(vec![new.to_raw()]);
     }
 
-    pub fn change_instance(&mut self, id: usize, instance: Instance) {
+    pub fn _change_instance(&mut self, id: usize, instance: Instance) {
         if let Some(i) = self.instance_resource._mut_local_at(id) {
             *i = instance.to_raw();
+        }
+    }
+
+    pub fn change_instance_raw(&mut self, id: usize, instance_raw: cgmath::Matrix4<f32>) {
+        if let Some(i) = self.instance_resource._mut_local_at(id) {
+            *i = InstanceRaw { model: instance_raw.into() };
         }
     }
 
