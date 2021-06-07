@@ -208,8 +208,8 @@ impl DrawScene for crate::renderer::Renderer {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Scene render pass"),
             color_attachments: &[
-                wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
+                wgpu::RenderPassColorAttachment {
+                    view: &frame.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(self.clear_color),
@@ -217,8 +217,8 @@ impl DrawScene for crate::renderer::Renderer {
                     }
                 }
             ],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                attachment: &self.depth_texture.view,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_texture.view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,

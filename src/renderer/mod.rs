@@ -28,12 +28,16 @@ use light::{
 use cgmath::prelude::*;
 use cgmath::{Vector3, Matrix4, Quaternion};
 
+use wgpu::ShaderFlags;
+use wgpu::ShaderSource;
 use winit::{
     event::*,
     window::{Window},
 };
 
 use wgpu::util::DeviceExt;
+
+use std::borrow::Cow;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -217,8 +221,46 @@ impl Renderer {
         });
 
         // Load precompiled shaders (see build.rs), set up render pipeline.
-        let vs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/shader.vert.spv"));
-        let fs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/shader.frag.spv"));
+        
+        // TODO: keep an eye out for the macro bugfix...
+        //  The workaround is a tad verbose.
+        // let vs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/shader.vert.spv"));
+        // let fs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/shader.frag.spv"));
+        fn bytes_to_words(bytes: &[u8]) -> Vec<u32>  {
+            let mut result: Vec<u32> = Vec::new();
+            for i in 0..bytes.len() / 4 {
+                result.push(u32::from_ne_bytes([
+                    bytes[4 * i + 0],
+                    bytes[4 * i + 1],
+                    bytes[4 * i + 2],
+                    bytes[4 * i + 3],
+                ]));
+            }
+            result
+        };
+
+        let vs_bytes = include_bytes!("shader_src/shader.vert.spv");
+        let vs_words: Cow<[u32]> = Cow::from(bytes_to_words(vs_bytes));
+        let vs_src = ShaderSource::SpirV(vs_words);
+
+        let vs_module_descriptor = wgpu::ShaderModuleDescriptor {
+            label: Some("vertex shader"),
+            source: vs_src,
+            flags: ShaderFlags::empty(),
+        };
+
+        let fs_bytes = include_bytes!("shader_src/shader.frag.spv");
+        let fs_words: Cow<[u32]> = Cow::from(bytes_to_words(fs_bytes));
+        let fs_src = ShaderSource::SpirV(fs_words);
+
+        let fs_module_descriptor = wgpu::ShaderModuleDescriptor {
+            label: Some("fragment shader"),
+            source: fs_src,
+            flags: ShaderFlags::empty(),
+        };
+
+        let vs_module = device.create_shader_module(&vs_module_descriptor);
+        let fs_module = device.create_shader_module(&fs_module_descriptor);
 
         // Get the pre-defined bindgroup layouts. Not sure if pre-defining is the way, but so far so good.
         let default_bind_group_layout = Self::default_bindgroup_layout(&device);
@@ -253,8 +295,34 @@ impl Renderer {
                 }
             );
 
-            let light_vs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/light.vert.spv"));
-            let light_fs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/light.frag.spv"));
+            // TODO: keep an eye out for the macro bugfix...
+            // let light_vs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/light.vert.spv"));
+            // let light_fs_module = device.create_shader_module(&wgpu::include_spirv!("shader_src/light.frag.spv"));
+
+            let light_vs_bytes = include_bytes!("shader_src/light.vert.spv");
+            let light_vs_words: Cow<[u32]> = Cow::from(bytes_to_words(light_vs_bytes));
+            let light_vs_src = ShaderSource::SpirV(light_vs_words);
+
+            let light_vs_module_descriptor = wgpu::ShaderModuleDescriptor {
+                label: Some("light vertex shader"),
+                source: light_vs_src,
+                flags: ShaderFlags::empty(),
+            };
+
+            let light_fs_bytes = include_bytes!("shader_src/light.frag.spv");
+            let light_fs_words: Cow<[u32]> = Cow::from(bytes_to_words(light_fs_bytes));
+            let light_fs_src = ShaderSource::SpirV(light_fs_words);
+
+            let light_fs_module_descriptor = wgpu::ShaderModuleDescriptor {
+                label: Some("light fragment shader"),
+                source: light_fs_src,
+                flags: ShaderFlags::empty(),
+            };
+            
+            let light_vs_module = device.create_shader_module(&light_vs_module_descriptor);
+            let light_fs_module = device.create_shader_module(&light_fs_module_descriptor);
+
+            
 
             Self::create_render_pipeline(
                 &device, 
@@ -407,8 +475,8 @@ impl Renderer {
         let mut _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Default Renderpass"),
             color_attachments: &[
-                wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
+                wgpu::RenderPassColorAttachment {
+                    view: &frame.view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(self.clear_color),
@@ -416,8 +484,8 @@ impl Renderer {
                     }
                 }
             ],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                attachment: &self.depth_texture.view,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_texture.view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: true,
@@ -478,8 +546,7 @@ impl Renderer {
                 targets: &[
                     wgpu::ColorTargetState {
                         format: color_format,
-                        color_blend: wgpu::BlendState::REPLACE,
-                        alpha_blend: wgpu::BlendState::REPLACE,
+                        blend: Some(wgpu::BlendState::REPLACE),
                         write_mask: wgpu::ColorWrite::ALL,
                     },
                 ],
@@ -487,9 +554,11 @@ impl Renderer {
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: wgpu::CullMode::Back,
+                cull_mode: Some(wgpu::Face::Back),
                 strip_index_format: None,
                 polygon_mode: wgpu::PolygonMode::Fill,
+                clamp_depth: false,
+                conservative: false,
             },
             depth_stencil: depth_format.map(|format| {
                 wgpu::DepthStencilState {
@@ -498,7 +567,6 @@ impl Renderer {
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
-                    clamp_depth: false,
                 }
             }),
             multisample: wgpu::MultisampleState {

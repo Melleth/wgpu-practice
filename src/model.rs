@@ -542,21 +542,15 @@ pub struct Mesh {
 
 impl Vertex for ModelVertex {
     fn layout<'a>() -> wgpu::VertexBufferLayout<'a> {
-        let _vert_atr_arr = wgpu::vertex_attr_array![
-                0 => Float3,
-                1 => Float2,
-                2 => Float3
-        ];
-
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<ModelVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::InputStepMode::Vertex,
             attributes: &[
-                wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float3, },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress, shader_location: 1, format: wgpu::VertexFormat::Float2, },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress, shader_location: 2, format: wgpu::VertexFormat::Float3, },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress, shader_location: 3, format: wgpu::VertexFormat::Float3, },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 11]>() as wgpu::BufferAddress, shader_location: 4, format: wgpu::VertexFormat::Float3, },
+                wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x3, },
+                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress, shader_location: 1, format: wgpu::VertexFormat::Float32x2, },
+                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress, shader_location: 2, format: wgpu::VertexFormat::Float32x3, },
+                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress, shader_location: 3, format: wgpu::VertexFormat::Float32x3, },
+                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 11]>() as wgpu::BufferAddress, shader_location: 4, format: wgpu::VertexFormat::Float32x3, },
             ]
         }
     }
