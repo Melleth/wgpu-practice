@@ -25,10 +25,32 @@ use model::{
     Model,
 };
 
+#[cfg(target_arch = "wasm32")]
+use {
+    log::Level,
+    log::info,
+};
+
+
 fn main() {
-    env_logger::init();
+    #[cfg(not(target_arch = "wasm32"))] {
+        env_logger::init();
+    }
+    
     let event_loop = EventLoop::new();
+
     let window = WindowBuilder::new() .build(&event_loop) .unwrap();
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::WindowExtWebSys;
+        let canvas = window.canvas();
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+        let body = document.body().unwrap();
+        body.append_child(&canvas)
+            .expect("Append canvas to HTML body");
+    }
+     
 
     let _res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
 
@@ -114,4 +136,16 @@ fn main() {
             _ => {}
         }
     });
+}
+
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use wasm_bindgen::prelude::*;
+    #[wasm_bindgen(start)]
+    pub fn run() {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        console_log::init_with_level(log::Level::Debug).expect("Could not initialize logger.");
+        info!("Hello from wasm.");
+        super::main();
+    }
 }

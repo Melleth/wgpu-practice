@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 image = "0.23"
-winit = "0.22"
+winit = {version = "0.22", features=["web-sys"]}
 cgmath = "0.17"
 env_logger = "0.7"
 log = "0.4"
@@ -17,7 +17,7 @@ futures = "0.3"
 bytemuck = { version = "1.4", features = [ "derive" ]}
 anyhow = "1.0"
 gltf = "0.15"
-itertools = "0.10.0"
+console_log = "0.2"
 
 [build-dependencies]
 anyhow = "1.0"
@@ -25,3 +25,36 @@ shaderc = "0.7"
 fs_extra = "1.1"
 glob = "0.3"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies.web_sys]
+package = "web-sys"
+version = "0.3.22"
+features = [
+    'console',
+    "AddEventListenerOptions",
+    'CssStyleDeclaration',
+    'BeforeUnloadEvent',
+    'Document',
+    'DomRect',
+    'Element',
+    'Event',
+    'EventTarget',
+    'FocusEvent',
+    'HtmlCanvasElement',
+    'HtmlElement',
+    'KeyboardEvent',
+    'MediaQueryList',
+    'MediaQueryListEvent',
+    'MouseEvent',
+    'Node',
+    'PointerEvent',
+    'Window',
+    'WheelEvent',
+]
+[target.'cfg(target_arch = "wasm32")'.dependencies.console_error_panic_hook]
+version = "0.1.6"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.wasm-bindgen]
+version = "0.2.45"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+console_log = "0.2"

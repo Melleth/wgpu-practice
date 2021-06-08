@@ -91,10 +91,10 @@ impl Renderer {
         let surface = unsafe { instance.create_surface(window) };
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
             },
-        ).await.unwrap();
+        ).await.expect("Failed to find an appropriate adapter.");
 
         // Use the adapter to request device and queue.
         //  You can view available features through device.features()
@@ -105,7 +105,7 @@ impl Renderer {
                 limits: wgpu::Limits::default(),
             },
             None,
-        ).await.unwrap();
+        ).await.expect("Failed to create device.");
 
         let device = Arc::new(device);
         let queue = Arc::new(queue);
