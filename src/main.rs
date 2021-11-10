@@ -1,45 +1,35 @@
-mod renderer;
 mod camera;
 mod model;
+mod renderer;
 mod scene;
 
 use winit::{
     event::*,
-    event_loop::{EventLoop, ControlFlow},
-    window::{WindowBuilder}
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
 };
 
 use std::path::Path;
-use std::time::{Instant};
+use std::time::Instant;
 
-use renderer::{
-    Renderer,
-};
+use renderer::Renderer;
 
-use scene::{
-    Scene,
-    DrawScene,
-};
+use scene::{DrawScene, Scene};
 
-use model::{
-    Model,
-};
+use model::Model;
 
 #[cfg(target_arch = "wasm32")]
-use {
-    log::Level,
-    log::info,
-};
-
+use {log::info, log::Level};
 
 fn main() {
-    #[cfg(not(target_arch = "wasm32"))] {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
         env_logger::init();
     }
-    
+
     let event_loop = EventLoop::new();
 
-    let window = WindowBuilder::new() .build(&event_loop) .unwrap();
+    let window = WindowBuilder::new().build(&event_loop).unwrap();
     #[cfg(target_arch = "wasm32")]
     {
         use winit::platform::web::WindowExtWebSys;
@@ -50,7 +40,6 @@ fn main() {
         body.append_child(&canvas)
             .expect("Append canvas to HTML body");
     }
-     
 
     let _res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
 
@@ -66,7 +55,7 @@ fn main() {
     // Simple test scene to test scenegraph.
     scene.add_model(model);
     scene.make_galaxy();
-    
+
     let mut last_render_time = Instant::now();
     let mut _spawn_time = Instant::now();
     let mut _removing = false;
@@ -75,8 +64,13 @@ fn main() {
 
         match event {
             // TODO: Probably shouldn't do any input processing in renderer but move it to a seperate mod?
-            Event::DeviceEvent { ref event, .. } => { renderer.input_mouse_movement(event); }
-            Event::WindowEvent { ref event, window_id } if window_id == window.id() => {
+            Event::DeviceEvent { ref event, .. } => {
+                renderer.input_mouse_movement(event);
+            }
+            Event::WindowEvent {
+                ref event,
+                window_id,
+            } if window_id == window.id() => {
                 match event {
                     WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                     WindowEvent::KeyboardInput { input, .. } => match input {
@@ -86,8 +80,10 @@ fn main() {
                             ..
                         } => *control_flow = ControlFlow::Exit,
                         // TODO: Probably shouldn't do any input processing in renderer but move it to a seperate mod?
-                        _ => { renderer.input(event); }
-                    }
+                        _ => {
+                            renderer.input(event);
+                        }
+                    },
                     WindowEvent::Resized(physical_size) => {
                         renderer.resize(Some(*physical_size));
                     }
@@ -122,9 +118,9 @@ fn main() {
                     // All good.
                     Ok(_) => {}
                     // Recreate the sc if it is lost.
-                    Err(wgpu::SwapChainError::Lost) => renderer.resize(None),
+                    Err(wgpu::SurfaceError::Lost) => renderer.resize(None),
                     // Out of mem, just exit the program.
-                    Err(wgpu::SwapChainError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
                     // All other errrors should be resolved by the next frame.
                     Err(e) => eprintln!("{:?}", e),
                 }

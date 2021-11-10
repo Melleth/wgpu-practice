@@ -1,11 +1,11 @@
-use image::GenericImageView;
 use anyhow::*;
-use std::path::Path;
+use image::GenericImageView;
 use std::num::NonZeroU32;
+use std::path::Path;
 
 #[derive(Debug)]
 pub struct Texture {
-    pub texture : wgpu::Texture,
+    pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
@@ -13,10 +13,14 @@ pub struct Texture {
 impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-    pub fn create_depth_texture(device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, label: &str) -> Self {
+    pub fn create_depth_texture(
+        device: &wgpu::Device,
+        surface_configuration: &wgpu::SurfaceConfiguration,
+        label: &str,
+    ) -> Self {
         let size = wgpu::Extent3d {
-            width: sc_desc.width,
-            height: sc_desc.height,
+            width: surface_configuration.width,
+            height: surface_configuration.height,
             depth_or_array_layers: 1,
         };
 
@@ -27,7 +31,7 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         };
 
         let texture = device.create_texture(&desc);
@@ -46,14 +50,18 @@ impl Texture {
             ..Default::default()
         });
 
-        Self { texture, view, sampler, }
+        Self {
+            texture,
+            view,
+            sampler,
+        }
     }
 
     pub fn _from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         bytes: &[u8],
-        label: &str
+        label: &str,
     ) -> Result<Self> {
         let img = match image::load_from_memory_with_format(bytes, image::ImageFormat::Png) {
             Ok(i) => i,
@@ -96,31 +104,30 @@ impl Texture {
             _ => panic!["Unsupported gltf::image::Format in texture::from_gltf_image(device: &wgpu::Device, queue: &wgpu::Queue, img: &gltf::image::Data, label: Option<&str>)"],
         };
 
-        let texture = device.create_texture(
-            &wgpu::TextureDescriptor {
-                size: texture_size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: format,
-                usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
-                label: label,
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: label,
         });
-
 
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
             },
-           &converted_rgba,
-           wgpu::ImageDataLayout {
-               offset: 0,
-               bytes_per_row: NonZeroU32::new(4 * img.width),
-               rows_per_image: NonZeroU32::new(img.height),
-           },
-           texture_size
+            &converted_rgba,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: NonZeroU32::new(4 * img.width),
+                rows_per_image: NonZeroU32::new(img.height),
+            },
+            texture_size,
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -134,7 +141,11 @@ impl Texture {
             ..Default::default()
         });
 
-        Self { texture, view, sampler }
+        Self {
+            texture,
+            view,
+            sampler,
+        }
     }
 
     pub fn _from_image(
@@ -149,20 +160,18 @@ impl Texture {
         let texture_size = wgpu::Extent3d {
             width: dimensions.0,
             height: dimensions.1,
-            depth_or_array_layers:1,
+            depth_or_array_layers: 1,
         };
 
-        let texture = device.create_texture(
-            &wgpu::TextureDescriptor {
-                size: texture_size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
-                label: label,
-            }
-        );
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            label: label,
+        });
 
         // Use the queue to copy the pixel data to GPU.
         queue.write_texture(
@@ -170,6 +179,7 @@ impl Texture {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
             },
             // Pixel data.
             &rgba,
@@ -179,7 +189,7 @@ impl Texture {
                 bytes_per_row: NonZeroU32::new(4 * dimensions.0),
                 rows_per_image: NonZeroU32::new(dimensions.1),
             },
-            texture_size
+            texture_size,
         );
 
         // Define texture view and sampler.
@@ -194,7 +204,11 @@ impl Texture {
             ..Default::default()
         });
 
-        Ok(Self { texture, view, sampler })
+        Ok(Self {
+            texture,
+            view,
+            sampler,
+        })
     }
 
     pub fn _load<P: AsRef<Path>>(

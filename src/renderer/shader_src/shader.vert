@@ -6,7 +6,16 @@ layout(location = 2) in vec3 a_normal;
 layout(location = 3) in vec3 a_tangent;
 layout(location = 4) in vec3 a_bitangent;
 
-layout(location = 5) in mat4 model_matrix;
+//layout(location = 5) in mat4 model_matrix;
+layout(location = 5) in vec4 model_matrix_column1;
+layout(location = 6) in vec4 model_matrix_column2;
+layout(location = 7) in vec4 model_matrix_column3;
+layout(location = 8) in vec4 model_matrix_column4;
+
+layout(location = 9)  in vec4 inverse_model_matrix_column1;
+layout(location = 10) in vec4 inverse_model_matrix_column2;
+layout(location = 11) in vec4 inverse_model_matrix_column3;
+layout(location = 12) in vec4 inverse_model_matrix_column4;
 
 layout(location = 0) out vec2 v_tex_coords;
 layout(location = 1) out vec3 v_position;
@@ -24,9 +33,21 @@ layout(set = 2, binding = 0) uniform Light {
 };
 
 void main() {
+    mat4 model_matrix = mat4(
+        model_matrix_column1,
+        model_matrix_column2,
+        model_matrix_column3,
+        model_matrix_column4);
+
+    mat4 inverse_model_matrix = mat4(
+        inverse_model_matrix_column1,
+        inverse_model_matrix_column2,
+        inverse_model_matrix_column3,
+        inverse_model_matrix_column4);
+
     v_tex_coords = a_tex_coords;
 
-    mat3 normal_matrix = mat3(transpose(inverse(model_matrix)));
+    mat3 normal_matrix = mat3(transpose(inverse_model_matrix));
     vec3 normal = normalize(normal_matrix * a_normal);
     vec3 tangent = normalize(normal_matrix * a_tangent);
     vec3 bitangent = normalize(normal_matrix * a_bitangent);

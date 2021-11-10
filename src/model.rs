@@ -1,14 +1,16 @@
 use crate::renderer::{
-    texture::Texture,
     instance::{Instance, InstanceRaw},
-    Renderer,
     resource::{Resource, ResourceType},
+    texture::Texture,
+    Renderer,
 };
 
 use anyhow::*;
-use std::path::Path;
 use std::ops::Range;
+use std::path::Path;
 use wgpu::util::DeviceExt;
+
+use cgmath::SquareMatrix;
 
 pub trait Vertex {
     fn layout<'a>() -> wgpu::VertexBufferLayout<'a>;
@@ -28,7 +30,7 @@ where
         mesh: &'b Mesh,
         material: &'b Material,
         uniforms: &'b wgpu::BindGroup,
-        light: &'b wgpu::BindGroup
+        light: &'b wgpu::BindGroup,
     );
 
     fn draw_mesh_instanced(
@@ -37,7 +39,7 @@ where
         instances: Range<u32>,
         material: &'b Material,
         uniforms: &'b wgpu::BindGroup,
-        light: &'b wgpu::BindGroup
+        light: &'b wgpu::BindGroup,
     );
 
     fn draw_model(
@@ -54,8 +56,6 @@ where
         uniforms: &'b wgpu::BindGroup,
         light: &'b wgpu::BindGroup,
     );
-
-    
 }
 impl<'a, 'b> DrawModel<'a, 'b> for wgpu::RenderPass<'a>
 where
@@ -66,7 +66,7 @@ where
         mesh: &'b Mesh,
         material: &'b Material,
         uniforms: &'b wgpu::BindGroup,
-        light: &'b wgpu::BindGroup
+        light: &'b wgpu::BindGroup,
     ) {
         self.draw_mesh_instanced(mesh, 0..1, material, uniforms, light);
     }
@@ -77,8 +77,8 @@ where
         instances: Range<u32>,
         material: &'b Material,
         uniforms: &'b wgpu::BindGroup,
-        light: &'b wgpu::BindGroup
-    ){
+        light: &'b wgpu::BindGroup,
+    ) {
         self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
         self.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         self.set_bind_group(0, &material.bind_group, &[]);
@@ -206,16 +206,13 @@ pub struct ModelVertex {
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
-    // For a singular model this would be resource.cpu_buffer.len() == 1 
+    // For a singular model this would be resource.cpu_buffer.len() == 1
     //  vector containing just a model matrix
     pub instance_resource: Resource<InstanceRaw>,
 }
 
 impl Model {
-    pub fn load<P: AsRef<Path>>(
-        renderer: &Renderer,
-        path: P
-    ) -> Result<Self> {
+    pub fn load<P: AsRef<Path>>(renderer: &Renderer, path: P) -> Result<Self> {
         let queue = &renderer.queue;
         let device = &renderer.device;
 
@@ -226,46 +223,50 @@ impl Model {
 
         for mesh in document.meshes() {
             for primitive in mesh.primitives() {
-
                 // Deal with material.
-                materials.push(
-                    Material::from_gltf(
-                        primitive.material(),
-                        &images,
-                        device,
-                        queue,
-                        &renderer.default_bind_group_layout,
-                    )
-                );
+                materials.push(Material::from_gltf(
+                    primitive.material(),
+                    &images,
+                    device,
+                    queue,
+                    &renderer.default_bind_group_layout,
+                ));
 
                 let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-                let mut _vertices = Vec::new();                
+                let mut _vertices = Vec::new();
 
-                
                 // Read positions, put them in a ModelVertex struct.
                 _vertices = if let Some(pos_iter) = reader.read_positions() {
                     if let Some(tc_iter) = reader.read_tex_coords(0) {
                         if let Some(n_iter) = reader.read_normals() {
                             if let Some(tangent_iter) = reader.read_tangents() {
-                                pos_iter.zip(
-                                    tc_iter.into_f32().zip(
-                                        n_iter.zip(
-                                            tangent_iter))).map(|(p, (tc, (n, t)))| {
-                                                let tangent = cgmath::Vector3::from([t[0], t[1], t[2]]);
-                                                let normal = cgmath::Vector3::from(n);
-                                                let bitangent = tangent.cross(normal);
-                                                ModelVertex {
-                                                    position: p,
-                                                    tex_coords: tc,
-                                                    normal: n,
-                                                    tangent: tangent.into(),
-                                                    bitangent: bitangent.into(),
-                                                }
-                                            }).collect()
-                            } else { Vec::new() }
-                        } else { Vec::new() }
-                    } else { Vec::new() }
-                } else { Vec::new() };
+                                pos_iter
+                                    .zip(tc_iter.into_f32().zip(n_iter.zip(tangent_iter)))
+                                    .map(|(p, (tc, (n, t)))| {
+                                        let tangent = cgmath::Vector3::from([t[0], t[1], t[2]]);
+                                        let normal = cgmath::Vector3::from(n);
+                                        let bitangent = tangent.cross(normal);
+                                        ModelVertex {
+                                            position: p,
+                                            tex_coords: tc,
+                                            normal: n,
+                                            tangent: tangent.into(),
+                                            bitangent: bitangent.into(),
+                                        }
+                                    })
+                                    .collect()
+                            } else {
+                                Vec::new()
+                            }
+                        } else {
+                            Vec::new()
+                        }
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                };
 
                 // Read indices.
                 let mut indices = Vec::new();
@@ -276,28 +277,24 @@ impl Model {
                 }
 
                 // Create buffers.
-                let vertex_buffer = device.create_buffer_init(
-                    &wgpu::util::BufferInitDescriptor {
-                        label: Some(&format!("{:?} Vertex Buffer", path.as_ref())),
-                        contents: bytemuck::cast_slice(&_vertices),
-                        usage: wgpu::BufferUsage::VERTEX,
-                    }
-                );
+                let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(&format!("{:?} Vertex Buffer", path.as_ref())),
+                    contents: bytemuck::cast_slice(&_vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
 
-                let index_buffer = device.create_buffer_init(
-                    &wgpu::util::BufferInitDescriptor {
-                        label: Some(&format!("{:?} Index Buffer", path.as_ref())),
-                        contents: bytemuck::cast_slice(&indices),
-                        usage: wgpu::BufferUsage::INDEX,
-                    }
-                );
+                let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(&format!("{:?} Index Buffer", path.as_ref())),
+                    contents: bytemuck::cast_slice(&indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                });
 
                 meshes.push(Mesh {
                     name: mesh.name().unwrap_or("Cool mesh name").to_string(),
                     vertex_buffer,
                     index_buffer,
                     num_elements: indices.len() as u32,
-                    material: materials.len() - 1
+                    material: materials.len() - 1,
                 });
             }
         }
@@ -316,21 +313,27 @@ impl Model {
         //     ResourceType::Vertex
         // );
 
-        let instance_resource = Resource::new_sized(
-            device.clone(),
-            queue.clone(), 
-            1,
-            ResourceType::Vertex
-        );
-            
+        let instance_resource =
+            Resource::new_sized(device.clone(), queue.clone(), 1, ResourceType::Vertex);
 
-        Ok ( Self { meshes, materials, instance_resource})
+        Ok(Self {
+            meshes,
+            materials,
+            instance_resource,
+        })
     }
 
     pub fn add_instance(&mut self) {
         // For now we'll default the new instances to be positioned next to the
         //  previous instance.
-        let prev = self.instance_resource.get_cpu_length() - 1;
+        let current_length = self.instance_resource.get_cpu_length();
+
+        let prev = if current_length > 0 {
+            current_length - 1
+        } else {
+            0
+        };
+
         let mut new = if let Some(prev_raw_instance) = self.instance_resource.local_at(prev) {
             Instance::from(prev_raw_instance)
         } else {
@@ -350,19 +353,22 @@ impl Model {
 
     pub fn change_instance_raw(&mut self, id: usize, instance_raw: cgmath::Matrix4<f32>) {
         if let Some(i) = self.instance_resource._mut_local_at(id) {
-            *i = InstanceRaw { model: instance_raw.into() };
+            *i = InstanceRaw {
+                model: instance_raw.into(),
+                inverse_model: instance_raw.invert().unwrap().into(),
+            };
         }
     }
 
     pub fn _remove_instance(&mut self) {
         // Remove the last instance for testing purposes.
-        self.instance_resource._remove_from_buffer(self.instance_resource.get_cpu_length() - 1);
+        self.instance_resource
+            ._remove_from_buffer(self.instance_resource.get_cpu_length() - 1);
     }
 
     pub fn get_num_instances(&self) -> usize {
         self.instance_resource.get_cpu_length()
     }
-
 }
 
 pub struct Material {
@@ -377,66 +383,54 @@ pub struct Material {
 impl Material {
     fn _create_bind_group_for_textures(
         textures: Vec<&Texture>,
-        device: &wgpu::Device
+        device: &wgpu::Device,
     ) -> (wgpu::BindGroupLayout, wgpu::BindGroup) {
         // Define texture bindgroup layout, and the bind group.
         let mut layout_desc_entries = Vec::new();
         let mut bind_group_entries = Vec::new();
 
         for (i, t) in textures.iter().enumerate() {
-            layout_desc_entries.push(
-                wgpu::BindGroupLayoutEntry {
-                    binding: (i * 2) as u32,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float{ filterable: true },
-                    },
-                    count: None,
-                }
-            );
-            layout_desc_entries.push(
-                wgpu::BindGroupLayoutEntry {
-                    binding: (i * 2 + 1) as u32,
-                    visibility: wgpu::ShaderStage::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler {
-                        comparison: false,
-                        filtering: true,
-                    },
-                    count: None,
-                }
-            );
+            layout_desc_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: (i * 2) as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            });
+            layout_desc_entries.push(wgpu::BindGroupLayoutEntry {
+                binding: (i * 2 + 1) as u32,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler {
+                    comparison: false,
+                    filtering: true,
+                },
+                count: None,
+            });
 
-            bind_group_entries.push(
-                wgpu::BindGroupEntry {
-                    binding: (i * 2) as u32,
-                    resource: wgpu::BindingResource::TextureView(&t.view)
-                }
-            );
+            bind_group_entries.push(wgpu::BindGroupEntry {
+                binding: (i * 2) as u32,
+                resource: wgpu::BindingResource::TextureView(&t.view),
+            });
 
-            bind_group_entries.push(
-                wgpu::BindGroupEntry {
-                    binding: (i * 2 + 1) as u32,
-                    resource: wgpu::BindingResource::Sampler(&t.sampler)
-                }
-            );
+            bind_group_entries.push(wgpu::BindGroupEntry {
+                binding: (i * 2 + 1) as u32,
+                resource: wgpu::BindingResource::Sampler(&t.sampler),
+            });
         }
 
-        let bind_group_layout = device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-                entries: &layout_desc_entries.as_slice(),
-                label: Some("bind_group_layout"),
-            }
-        );
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &layout_desc_entries.as_slice(),
+            label: Some("bind_group_layout"),
+        });
 
-        let bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &bind_group_layout,
-                entries: &bind_group_entries,
-                label: Some("bind_group"),
-            }
-        );
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &bind_group_entries,
+            label: Some("bind_group"),
+        });
 
         (bind_group_layout, bind_group)
     }
@@ -448,27 +442,21 @@ impl Material {
     ) -> wgpu::BindGroup {
         let mut bind_group_entries = Vec::new();
         for (i, t) in textures.iter().enumerate() {
-            bind_group_entries.push(
-                wgpu::BindGroupEntry {
-                    binding: (i * 2) as u32,
-                    resource: wgpu::BindingResource::TextureView(&t.view)
-                }
-            );
+            bind_group_entries.push(wgpu::BindGroupEntry {
+                binding: (i * 2) as u32,
+                resource: wgpu::BindingResource::TextureView(&t.view),
+            });
 
-            bind_group_entries.push(
-                wgpu::BindGroupEntry {
-                    binding: (i * 2 + 1) as u32,
-                    resource: wgpu::BindingResource::Sampler(&t.sampler)
-                }
-            );
+            bind_group_entries.push(wgpu::BindGroupEntry {
+                binding: (i * 2 + 1) as u32,
+                resource: wgpu::BindingResource::Sampler(&t.sampler),
+            });
         }
-        device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &bind_group_layout,
-                entries: &bind_group_entries,
-                label: Some("bind_group"),
-            }
-        )
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &bind_group_entries,
+            label: Some("bind_group"),
+        })
     }
 
     pub fn from_gltf(
@@ -483,25 +471,51 @@ impl Material {
         let pbr_mr = material.pbr_metallic_roughness();
         let diffuse_texture = if let Some(tex) = pbr_mr.base_color_texture() {
             let img = &images[tex.texture().index()];
-            Some(Texture::from_gltf_image(device, queue, img, Some("diffuse_texture")))
+            Some(Texture::from_gltf_image(
+                device,
+                queue,
+                img,
+                Some("diffuse_texture"),
+            ))
         } else {
             None
         };
 
         let metallic_roughness_texture = if let Some(tex) = pbr_mr.metallic_roughness_texture() {
             let img = &images[tex.texture().index()];
-            Some(Texture::from_gltf_image(device, queue, img, Some("metallic_roughness_texture")))
-        } else { None };
-        
+            Some(Texture::from_gltf_image(
+                device,
+                queue,
+                img,
+                Some("metallic_roughness_texture"),
+            ))
+        } else {
+            None
+        };
+
         let normal_texture = if let Some(tex) = material.normal_texture() {
             let img = &images[tex.texture().index()];
-            Some(Texture::from_gltf_image(device, queue, img, Some("normal_texture")))
-        } else { None };
+            Some(Texture::from_gltf_image(
+                device,
+                queue,
+                img,
+                Some("normal_texture"),
+            ))
+        } else {
+            None
+        };
 
         let occlusion_texture = if let Some(tex) = material.occlusion_texture() {
             let img = &images[tex.texture().index()];
-            Some(Texture::from_gltf_image(device, queue, img, Some("occlusion_texture")))
-        } else { None };
+            Some(Texture::from_gltf_image(
+                device,
+                queue,
+                img,
+                Some("occlusion_texture"),
+            ))
+        } else {
+            None
+        };
 
         // Figure out what textures are present which we need to request binds for.
         if let Some(ref t) = diffuse_texture {
@@ -512,11 +526,15 @@ impl Material {
             textures.push(t);
         }
         //let (bind_group_layout, bind_group) = Material::create_bind_group_for_textures(textures, device);
-        let bind_group = Material::create_bind_group_with_layout(textures, device, bind_group_layout);
+        let bind_group =
+            Material::create_bind_group_with_layout(textures, device, bind_group_layout);
 
-        let name = material.name().unwrap_or("Very cool material name.").to_string();
+        let name = material
+            .name()
+            .unwrap_or("Very cool material name.")
+            .to_string();
 
-        Self { 
+        Self {
             name,
             diffuse_texture,
             metallic_roughness_texture,
@@ -544,14 +562,34 @@ impl Vertex for ModelVertex {
     fn layout<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<ModelVertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::InputStepMode::Vertex,
+            step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
-                wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x3, },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress, shader_location: 1, format: wgpu::VertexFormat::Float32x2, },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress, shader_location: 2, format: wgpu::VertexFormat::Float32x3, },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress, shader_location: 3, format: wgpu::VertexFormat::Float32x3, },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 11]>() as wgpu::BufferAddress, shader_location: 4, format: wgpu::VertexFormat::Float32x3, },
-            ]
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 11]>() as wgpu::BufferAddress,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
         }
     }
 }

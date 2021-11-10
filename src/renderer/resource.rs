@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use bytemuck::{Pod, Zeroable};
 use std::ops::Range;
-use bytemuck::{ Pod, Zeroable };
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 // Used to create a mapping between types and buffer usages.
@@ -12,12 +12,12 @@ pub enum ResourceType {
     Uniform,
 }
 
-impl From<ResourceType> for wgpu::BufferUsage {
-    fn from(item: ResourceType) -> wgpu::BufferUsage {
+impl From<ResourceType> for wgpu::BufferUsages {
+    fn from(item: ResourceType) -> wgpu::BufferUsages {
         match item {
-            ResourceType::Vertex => wgpu::BufferUsage::VERTEX,
-            ResourceType::Index => wgpu::BufferUsage::INDEX,
-            ResourceType::Uniform => wgpu::BufferUsage::UNIFORM,
+            ResourceType::Vertex => wgpu::BufferUsages::VERTEX,
+            ResourceType::Index => wgpu::BufferUsages::INDEX,
+            ResourceType::Uniform => wgpu::BufferUsages::UNIFORM,
         }
     }
 }
@@ -46,9 +46,9 @@ impl<T: Pod + Zeroable> Resource<T> {
         size: usize,
         resource_type: ResourceType,
     ) -> Self {
-        let usage = wgpu::BufferUsage::from(resource_type) | wgpu::BufferUsage::COPY_DST;
+        let usage = wgpu::BufferUsages::from(resource_type) | wgpu::BufferUsages::COPY_DST;
         let cpu_buffer: Vec<T> = Vec::with_capacity(size);
-        let gpu_buffer = device.create_buffer(&wgpu::BufferDescriptor{
+        let gpu_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Nicely sized buffer"),
             size: (size * std::mem::size_of::<T>()) as wgpu::BufferAddress,
             // Wether the mem block is accesible by ArrayBuffer (according to spec...?)
@@ -62,7 +62,7 @@ impl<T: Pod + Zeroable> Resource<T> {
             cpu_buffer,
             gpu_buffer,
             size,
-            resource_type
+            resource_type,
         }
     }
 
@@ -71,14 +71,17 @@ impl<T: Pod + Zeroable> Resource<T> {
         queue: Arc<wgpu::Queue>,
         cpu_buffer: Vec<T>,
         resource_type: ResourceType,
-    ) -> Self where T: Pod + Zeroable, {
-        let usage = wgpu::BufferUsage::from(resource_type) | wgpu::BufferUsage::COPY_DST;
+    ) -> Self
+    where
+        T: Pod + Zeroable,
+    {
+        let usage = wgpu::BufferUsages::from(resource_type) | wgpu::BufferUsages::COPY_DST;
         let size = cpu_buffer.len();
 
         let gpu_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None, // This will bite us in the ass while debugging somewhere along the line I guess.
             contents: bytemuck::cast_slice(&cpu_buffer),
-            usage
+            usage,
         });
 
         Self {
@@ -106,9 +109,9 @@ impl<T: Pod + Zeroable> Resource<T> {
             //  TODO: Needs to be something better... because crash if we add >5 things on the first frame...
             self.size *= 5;
             self.gpu_buffer.destroy();
-            let usage = wgpu::BufferUsage::from(self.resource_type) | wgpu::BufferUsage::COPY_DST;
+            let usage = wgpu::BufferUsages::from(self.resource_type) | wgpu::BufferUsages::COPY_DST;
 
-            self.gpu_buffer = self.device.create_buffer(&wgpu::BufferDescriptor{
+            self.gpu_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Nicely sized buffer"),
                 size: (self.size * std::mem::size_of::<T>()) as wgpu::BufferAddress,
                 mapped_at_creation: false,
@@ -116,8 +119,11 @@ impl<T: Pod + Zeroable> Resource<T> {
             });
         }
 
-        self.queue.write_buffer(&self.gpu_buffer, 0 as wgpu::BufferAddress, bytemuck::cast_slice(&self.cpu_buffer));
-
+        self.queue.write_buffer(
+            &self.gpu_buffer,
+            0 as wgpu::BufferAddress,
+            bytemuck::cast_slice(&self.cpu_buffer),
+        );
     }
 
     pub fn get_gpu_buffer(&self) -> &wgpu::Buffer {
@@ -127,16 +133,28 @@ impl<T: Pod + Zeroable> Resource<T> {
     // I'd say there is a good to fair chance that there would be situations where we want to
     //  sync an interval of instances, but not all.
     pub fn _partial_sync_gpu(&mut self, range: Range<usize>, offset: usize) {
-        self.queue.write_buffer(&self.gpu_buffer, offset as wgpu::BufferAddress, bytemuck::cast_slice(&self.cpu_buffer[range]));
+        self.queue.write_buffer(
+            &self.gpu_buffer,
+            offset as wgpu::BufferAddress,
+            bytemuck::cast_slice(&self.cpu_buffer[range]),
+        );
     }
 
     // Allows for inplace mutation of an instantion within the local resource.
     pub fn _mut_local_at(&mut self, id: usize) -> Option<&mut T> {
-        if id < self.cpu_buffer.len() { Some(&mut self.cpu_buffer[id]) } else { None }
+        if id < self.cpu_buffer.len() {
+            Some(&mut self.cpu_buffer[id])
+        } else {
+            None
+        }
     }
 
-    pub fn local_at(&self, id:usize) -> Option<T> {
-        if id < self.cpu_buffer.len() { Some(self.cpu_buffer[id]) } else { None }
+    pub fn local_at(&self, id: usize) -> Option<T> {
+        if id < self.cpu_buffer.len() {
+            Some(self.cpu_buffer[id])
+        } else {
+            None
+        }
     }
 
     pub fn get_cpu_length(&self) -> usize {
