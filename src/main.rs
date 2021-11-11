@@ -1,5 +1,4 @@
 mod camera;
-mod model;
 mod renderer;
 mod scene;
 
@@ -12,11 +11,9 @@ use winit::{
 use std::path::Path;
 use std::time::Instant;
 
-use renderer::Renderer;
+use renderer::{model::Model, Renderer};
 
 use scene::{DrawScene, Scene};
-
-use model::Model;
 
 #[cfg(target_arch = "wasm32")]
 use {log::info, log::Level};

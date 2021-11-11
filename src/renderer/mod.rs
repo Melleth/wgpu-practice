@@ -1,5 +1,6 @@
 pub mod instance;
 pub mod light;
+pub mod model;
 pub mod resource;
 pub mod texture;
 
@@ -7,11 +8,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::camera::{Camera, CameraController, Projection};
-use crate::model::{ModelVertex, Vertex};
 
 use resource::{Resource, ResourceType};
 
 use instance::InstanceRaw;
+use model::*;
 
 use light::Light;
 use texture::Texture;
@@ -19,12 +20,9 @@ use texture::Texture;
 use cgmath::prelude::*;
 use cgmath::{Matrix4, Quaternion, Vector3};
 
-use wgpu::ShaderSource;
 use winit::{event::*, window::Window};
 
 use wgpu::util::DeviceExt;
-
-use std::borrow::Cow;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]

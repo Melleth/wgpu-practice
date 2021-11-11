@@ -1,7 +1,6 @@
 pub mod scenenode;
 
-use crate::model::*;
-use crate::renderer::light::*;
+use crate::renderer::{light::*, model::*};
 use scenenode::*;
 
 use std::ops::Range;
