@@ -1,5 +1,6 @@
 pub mod instance;
 pub mod light;
+pub mod material;
 pub mod model;
 pub mod resource;
 pub mod texture;
